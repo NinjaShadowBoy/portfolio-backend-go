@@ -1,0 +1,56 @@
+-- name: ListProjects :many
+SELECT *
+FROM projects
+ORDER BY created_at DESC, id DESC;
+
+-- name: GetProject :one
+SELECT *
+FROM projects
+WHERE id = $1
+LIMIT 1;
+
+-- name: CreateProject :one
+INSERT INTO projects (name, description, featured)
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- name: UpdateProject :one
+UPDATE projects
+SET name = COALESCE($2::varchar(500), name),
+    description = COALESCE($3::text, description),
+    featured = COALESCE($4::boolean, featured),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteProject :exec
+DELETE FROM projects
+WHERE id = $1;
+
+-- name: ProjectExists :one
+SELECT EXISTS (
+    SELECT 1
+    FROM projects
+    WHERE id = $1
+);
+
+-- name: DeleteProjectTechnologies :exec
+DELETE FROM project_technologies
+WHERE project_id = $1;
+
+-- name: InsertProjectTechnologies :exec
+INSERT INTO project_technologies (project_id, technology)
+SELECT $1, unnest($2::varchar[])
+ON CONFLICT (project_id, technology) DO NOTHING;
+
+-- name: ListTechnologiesByProjectID :many
+SELECT technology
+FROM project_technologies
+WHERE project_id = $1
+ORDER BY technology;
+
+-- name: ListAllTechnologiesByProjectID :many
+SELECT project_id, technology
+FROM project_technologies
+WHERE project_id = ANY($1::bigint[])
+ORDER BY project_id, technology;

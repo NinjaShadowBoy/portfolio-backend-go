@@ -1,4 +1,7 @@
 -- +goose Up
+-- Note: the target database (see DB_URL) must already exist; this migration only
+-- creates the schema inside it. `CREATE DATABASE`/`USE` are not valid here because
+-- goose runs each migration inside a transaction against the connected database.
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,

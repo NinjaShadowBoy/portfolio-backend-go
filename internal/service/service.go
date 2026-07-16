@@ -389,27 +389,18 @@ func githubPostForm(ctx context.Context, endpoint string, form url.Values, out a
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("%w: GitHub returned %s: %s", ErrBadRequest, resp.Status, strings.TrimSpace(string(snippet)))
+	if err := decodeOAuthJSON(resp, "GitHub", out); err != nil {
+		return fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
-
-	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+	return nil
 }
 
 func oauthErrText(code, desc string) string {
-	code = strings.TrimSpace(code)
-	desc = strings.TrimSpace(desc)
-	switch {
-	case code == "" && desc == "":
+	text := strings.Trim(strings.TrimSpace(code)+": "+strings.TrimSpace(desc), ": ")
+	if text == "" {
 		return "unknown error"
-	case desc == "":
-		return code
-	case code == "":
-		return desc
-	default:
-		return code + ": " + desc
 	}
+	return text
 }
 
 func (s *service) oauthConfig(provider OAuthProvider) *oauth2.Config {
@@ -482,13 +473,8 @@ func (s *service) getGoogleUserInfo(ctx context.Context, token *oauth2.Token) (g
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return googleUserInfo{}, fmt.Errorf("Google userinfo returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-
 	var info googleUserInfo
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
+	if err := decodeOAuthJSON(resp, "Google userinfo", &info); err != nil {
 		return googleUserInfo{}, err
 	}
 
@@ -520,13 +506,8 @@ func getGitHubProfile(ctx context.Context, client *http.Client, url string) (git
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return githubUserInfo{}, fmt.Errorf("GitHub API returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-
 	var info githubUserInfo
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
+	if err := decodeOAuthJSON(resp, "GitHub API", &info); err != nil {
 		return githubUserInfo{}, err
 	}
 
@@ -540,17 +521,22 @@ func getGitHubEmails(ctx context.Context, client *http.Client) ([]githubEmail, e
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("GitHub emails API returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-
 	var emails []githubEmail
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&emails); err != nil {
+	if err := decodeOAuthJSON(resp, "GitHub emails API", &emails); err != nil {
 		return nil, err
 	}
 
 	return emails, nil
+}
+
+// decodeOAuthJSON checks resp for a 2xx status and decodes its JSON body into out.
+// label names the upstream source for error messages. It does not close resp.Body.
+func decodeOAuthJSON(resp *http.Response, label string, out any) error {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%s returned %s: %s", label, resp.Status, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
 }
 
 func githubGet(ctx context.Context, client *http.Client, url string) (*http.Response, error) {

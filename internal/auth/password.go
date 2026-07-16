@@ -37,7 +37,6 @@ func VerifyPassword(stored sql.NullString, candidate string) bool {
 }
 
 func isBcryptHash(value string) bool {
-	return strings.HasPrefix(value, "$2a$") ||
-		strings.HasPrefix(value, "$2b$") ||
-		strings.HasPrefix(value, "$2y$")
+	// All bcrypt variants ($2a$, $2b$, $2y$) share the "$2" prefix.
+	return strings.HasPrefix(value, "$2")
 }

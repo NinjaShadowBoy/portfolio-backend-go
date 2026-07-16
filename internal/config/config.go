@@ -8,6 +8,21 @@ import (
 	"time"
 )
 
+// API base path segments — the single source of truth for the API version. The
+// full mount point is APIPrefix + "/" + APIVersion, e.g. "/portfolio/v1". Bump
+// APIVersion (and add a new route group) for breaking API changes so old clients
+// keep working. The OAuthBaseURL default and the router both derive from these,
+// so a bump can't leave the OAuth callback URL out of sync with the routes.
+const (
+	APIPrefix  = "/portfolio"
+	APIVersion = "v1"
+)
+
+// BasePath is the versioned root every route is mounted under, e.g. "/portfolio/v1".
+func BasePath() string {
+	return APIPrefix + "/" + APIVersion
+}
+
 type EmailConfig struct {
 	SMTPHost            string
 	SMTPPort            int
@@ -51,7 +66,7 @@ func Load() (Config, error) {
 		JWTSecret:          env("JWT_SECRET", "404E635266556A586E3072357538782F413F4428472B4B6250645367566B5970"),
 		JWTExpiration:      time.Duration(expirationMS) * time.Millisecond,
 		JWTIssuer:          env("JWT_ISSUER", "NinjaShadowBoy-PortfolioApp"),
-		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8080/portfolio/v1"),
+		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8080"+BasePath()),
 		OAuthRedirectURI:   env("OAUTH2_REDIRECT_URI", "http://localhost:4200/oauth2/redirect"),
 		GoogleClientID:     env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),

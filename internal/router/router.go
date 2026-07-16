@@ -14,19 +14,6 @@ import (
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
 )
 
-// Base path segments for the HTTP API. The full mount point is
-// APIPrefix + "/" + APIVersion, e.g. "/portfolio/v1". Bump APIVersion (and add a
-// new group) when introducing breaking API changes so old clients keep working.
-const (
-	APIPrefix  = "/portfolio"
-	APIVersion = "v1"
-)
-
-// BasePath is the versioned root every route is mounted under, e.g. "/portfolio/v1".
-func BasePath() string {
-	return APIPrefix + "/" + APIVersion
-}
-
 func New(cfg config.Config, jwt *auth.JWT, svc service.Service) http.Handler {
 	binding.EnableDecoderDisallowUnknownFields = true
 
@@ -41,7 +28,7 @@ func New(cfg config.Config, jwt *auth.JWT, svc service.Service) http.Handler {
 		MaxAge:           time.Hour,
 	}))
 
-	basePath := BasePath()
+	basePath := config.BasePath()
 	api := handler.New(svc, jwt, cfg.OAuthRedirectURI, basePath)
 	api.Routes(r.Group(basePath))
 

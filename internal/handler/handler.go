@@ -110,6 +110,11 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	authenticated.GET("/ratings/project/:projectId/has-rated", h.HasUserRatedProject)
 	authenticated.POST("/photos/:projectId", h.SaveProjectPhoto)
 	authenticated.POST("/photos/profile", h.SaveProfilePhoto)
+	authenticated.GET("/users/me/ratings", h.GetMyRatings)
+	authenticated.GET("/users/me/comments", h.GetMyComments)
+	authenticated.PATCH("/users/me", h.UpdateProfile)
+	authenticated.PATCH("/users/me/password", h.ChangePassword)
+	authenticated.DELETE("/users/me", h.DeleteAccount)
 
 	admin := authenticated.Group("")
 	admin.Use(middleware.Admin(h.jwt))
@@ -590,6 +595,52 @@ func (h *api) DeleteComment(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteComment(c.Request.Context(), id, identity.UserID); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *api) GetMyComments(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	comments, err := h.svc.ListUserComments(c.Request.Context(), claims.UserID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, comments)
+}
+
+func (h *api) UpdateProfile(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	var req dto.ProfileUpdate
+	if !bindJSON(c, &req) {
+		return
+	}
+	user, err := h.svc.UpdateProfile(c.Request.Context(), claims.UserID, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *api) ChangePassword(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	var req dto.PasswordChange
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.svc.ChangePassword(c.Request.Context(), claims.UserID, req); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.MessageResponse{Message: "Password updated successfully"})
+}
+
+func (h *api) DeleteAccount(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	if err := h.svc.DeleteAccount(c.Request.Context(), claims.UserID); err != nil {
 		writeError(c, err)
 		return
 	}

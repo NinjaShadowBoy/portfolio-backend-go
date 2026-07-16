@@ -146,6 +146,16 @@ type Identity struct {
 	Email     string  `json:"email,omitempty"`
 }
 
+type ProfileUpdate struct {
+	Name     *string `json:"name"`
+	ImageURL *string `json:"imageUrl"`
+}
+
+type PasswordChange struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
 type Photo struct {
 	ID        int64  `json:"id"`
 	PhotoURL  string `json:"photoUrl"`

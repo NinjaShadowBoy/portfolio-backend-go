@@ -79,6 +79,9 @@ type Service interface {
 	ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error)
 	GetIdentity(ctx context.Context, userID int64) (dto.Identity, error)
 	ClaimAnonymousActivity(ctx context.Context, anonUserID, realUserID int64) error
+	UpdateProfile(ctx context.Context, userID int64, req dto.ProfileUpdate) (dto.User, error)
+	ChangePassword(ctx context.Context, userID int64, req dto.PasswordChange) error
+	DeleteAccount(ctx context.Context, userID int64) error
 }
 
 type OAuthLoginStart struct {

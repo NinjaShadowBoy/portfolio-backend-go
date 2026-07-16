@@ -1,0 +1,36 @@
+[Unit]
+# Templated unit: one file serves every environment. The instance name (%i) is
+# the environment, e.g. `portfolio-backend@production`. __APP_PATH__ is replaced
+# by bootstrap.sh with your actual APP_PATH (default /opt/portfolio).
+Description=Portfolio backend (%i)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=portfolio
+Group=portfolio
+
+# The binary, db/migrations and .env all live in the per-env directory. The app
+# reads .env from its working directory; EnvironmentFile (optional, note the '-')
+# also exports it to the process for good measure.
+WorkingDirectory=__APP_PATH__/%i
+EnvironmentFile=-__APP_PATH__/%i/.env
+ExecStart=__APP_PATH__/%i/portfolio-backend
+
+Restart=on-failure
+RestartSec=3
+
+# All stdout/stderr goes to journald, tagged so `journalctl -t` / `-u` find it.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=portfolio-backend-%i
+
+# Light hardening.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

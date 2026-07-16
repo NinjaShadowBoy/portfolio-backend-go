@@ -126,7 +126,7 @@ jobs:
           envs: DEPLOY_ENV,PORT
           script: |
             set -euo pipefail
-            svc="portfolio-backend-$DEPLOY_ENV"
+            svc="portfolio-backend@$DEPLOY_ENV"
             sudo systemctl restart "$svc"
 
             # Poll the health endpoint for up to ~30s.

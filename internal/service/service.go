@@ -70,6 +70,11 @@ type Service interface {
 	MarkContactRead(ctx context.Context, id int64) (dto.ContactMessage, error)
 	MarkContactReplied(ctx context.Context, id int64) (dto.ContactMessage, error)
 	DeleteContactMessage(ctx context.Context, id int64) error
+	CreateComment(ctx context.Context, userID int64, req dto.CommentCreate) (dto.Comment, error)
+	ListProjectComments(ctx context.Context, projectID int64) ([]dto.Comment, error)
+	ListUserComments(ctx context.Context, userID int64) ([]dto.Comment, error)
+	UpdateComment(ctx context.Context, id int64, userID int64, req dto.CommentUpdate) (dto.Comment, error)
+	DeleteComment(ctx context.Context, id int64, userID int64) error
 	CreateAnonymousUser(ctx context.Context) (int64, string, error)
 	ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error)
 	GetIdentity(ctx context.Context, userID int64) (dto.Identity, error)

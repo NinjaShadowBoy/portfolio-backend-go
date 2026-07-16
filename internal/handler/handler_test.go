@@ -40,7 +40,7 @@ func TestRouting(t *testing.T) {
 		{"cron ok", http.MethodGet, "/portfolio/v1/cron", http.StatusOK},
 		{"project invalid id", http.MethodGet, "/portfolio/v1/projects/abc", http.StatusBadRequest},
 		{"rating dual-param invalid id", http.MethodGet, "/portfolio/v1/ratings/project/xyz/average", http.StatusBadRequest},
-		{"create rating requires auth", http.MethodPost, "/portfolio/v1/ratings", http.StatusUnauthorized},
+		{"comments invalid project id", http.MethodGet, "/portfolio/v1/comments/project/xyz", http.StatusBadRequest},
 		{"my-ratings requires auth", http.MethodGet, "/portfolio/v1/ratings/my-ratings", http.StatusUnauthorized},
 		{"delete photo requires auth", http.MethodDelete, "/portfolio/v1/photos/5", http.StatusUnauthorized},
 		{"admin contact requires auth", http.MethodGet, "/portfolio/v1/contact", http.StatusUnauthorized},

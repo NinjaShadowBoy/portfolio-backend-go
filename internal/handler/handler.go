@@ -87,15 +87,27 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	r.GET("/ratings/project/:projectId/distribution", h.GetRatingDistribution)
 	r.DELETE("/ratings/project/:projectId", h.DeleteProjectRatings)
 
+	r.GET("/projects/:id/comments", h.ListProjectComments)
+	r.GET("/comments/project/:projectId", h.ListProjectComments)
+
+	// Public participation: rating and commenting need no login. EnsureIdentity
+	// resolves a real user from their JWT or auto-provisions an anonymous one,
+	// setting the anon_token cookie so the identity persists across visits.
+	identified := r.Group("")
+	identified.Use(middleware.EnsureIdentity(h.jwt, h.svc, h.anonCookie))
+	identified.POST("/ratings", h.CreateRating)
+	identified.PUT("/ratings/:id", h.UpdateRating)
+	identified.DELETE("/ratings/:id", h.DeleteRating)
+	identified.POST("/comments", h.CreateComment)
+	identified.PUT("/comments/:id", h.UpdateComment)
+	identified.DELETE("/comments/:id", h.DeleteComment)
+
 	// Routes that identify the caller from their JWT must run behind Auth,
 	// otherwise the claims lookup returns nil and the handler panics.
 	authenticated := r.Group("")
 	authenticated.Use(middleware.Auth(h.jwt))
 	authenticated.GET("/ratings/my-ratings", h.GetMyRatings)
 	authenticated.GET("/ratings/project/:projectId/has-rated", h.HasUserRatedProject)
-	authenticated.POST("/ratings", h.CreateRating)
-	authenticated.PUT("/ratings/:id", h.UpdateRating)
-	authenticated.DELETE("/ratings/:id", h.DeleteRating)
 	authenticated.POST("/photos/:projectId", h.SaveProjectPhoto)
 	authenticated.POST("/photos/profile", h.SaveProfilePhoto)
 
@@ -441,12 +453,16 @@ func (h *api) HasUserRatedProject(c *gin.Context) {
 }
 
 func (h *api) CreateRating(c *gin.Context) {
-	claims := middleware.ClaimsFromContext(c)
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
 	var req dto.RatingCreate
 	if !bindJSON(c, &req) {
 		return
 	}
-	rating, err := h.svc.CreateRating(c.Request.Context(), claims.UserID, req)
+	rating, err := h.svc.CreateRating(c.Request.Context(), identity.UserID, req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -455,7 +471,11 @@ func (h *api) CreateRating(c *gin.Context) {
 }
 
 func (h *api) UpdateRating(c *gin.Context) {
-	claims := middleware.ClaimsFromContext(c)
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
@@ -464,7 +484,7 @@ func (h *api) UpdateRating(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	rating, err := h.svc.UpdateRating(c.Request.Context(), id, claims.UserID, req)
+	rating, err := h.svc.UpdateRating(c.Request.Context(), id, identity.UserID, req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -473,12 +493,86 @@ func (h *api) UpdateRating(c *gin.Context) {
 }
 
 func (h *api) DeleteRating(c *gin.Context) {
-	claims := middleware.ClaimsFromContext(c)
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.svc.DeleteRating(c.Request.Context(), id, claims.UserID); err != nil {
+	if err := h.svc.DeleteRating(c.Request.Context(), id, identity.UserID); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *api) ListProjectComments(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
+	if !ok {
+		return
+	}
+	comments, err := h.svc.ListProjectComments(c.Request.Context(), id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, comments)
+}
+
+func (h *api) CreateComment(c *gin.Context) {
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
+	var req dto.CommentCreate
+	if !bindJSON(c, &req) {
+		return
+	}
+	comment, err := h.svc.CreateComment(c.Request.Context(), identity.UserID, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, comment)
+}
+
+func (h *api) UpdateComment(c *gin.Context) {
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.CommentUpdate
+	if !bindJSON(c, &req) {
+		return
+	}
+	comment, err := h.svc.UpdateComment(c.Request.Context(), id, identity.UserID, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, comment)
+}
+
+func (h *api) DeleteComment(c *gin.Context) {
+	identity, ok := middleware.IdentityFromContext(c)
+	if !ok {
+		writeError(c, service.ErrUnauthorized)
+		return
+	}
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteComment(c.Request.Context(), id, identity.UserID); err != nil {
 		writeError(c, err)
 		return
 	}

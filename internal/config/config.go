@@ -48,6 +48,7 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	AllowedOrigins     []string
+	CookieSecure       bool
 	Email              EmailConfig
 }
 
@@ -73,6 +74,7 @@ func Load() (Config, error) {
 		GitHubClientID:     env("GITHUB_CLIENT_ID", ""),
 		GitHubClientSecret: env("GITHUB_CLIENT_SECRET", ""),
 		AllowedOrigins:     origins,
+		CookieSecure:       !isLocalEnvironment(),
 		Email: EmailConfig{
 			SMTPHost:            env("SMTP_HOST", "smtp.gmail.com"),
 			SMTPPort:            envInt("SMTP_PORT", 587),

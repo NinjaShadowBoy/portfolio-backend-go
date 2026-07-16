@@ -70,6 +70,9 @@ type Service interface {
 	MarkContactRead(ctx context.Context, id int64) (dto.ContactMessage, error)
 	MarkContactReplied(ctx context.Context, id int64) (dto.ContactMessage, error)
 	DeleteContactMessage(ctx context.Context, id int64) error
+	CreateAnonymousUser(ctx context.Context) (int64, string, error)
+	ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error)
+	GetIdentity(ctx context.Context, userID int64) (dto.Identity, error)
 }
 
 type OAuthLoginStart struct {

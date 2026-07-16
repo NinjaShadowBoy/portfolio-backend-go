@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"net/http"
@@ -24,6 +25,7 @@ type api struct {
 	jwt              *auth.JWT
 	oauthRedirectURI string
 	basePath         string
+	anonCookie       middleware.AnonCookieConfig
 }
 
 type oauthCookieConfig struct {
@@ -45,8 +47,14 @@ var oauthCookieNames = map[service.OAuthProvider]struct {
 
 const oauthCookieMaxAge = 10 * 60
 
-func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI, basePath string) API {
-	return &api{svc: svc, jwt: jwt, oauthRedirectURI: oauthRedirectURI, basePath: basePath}
+func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, cookieSecure bool) API {
+	return &api{
+		svc:              svc,
+		jwt:              jwt,
+		oauthRedirectURI: oauthRedirectURI,
+		basePath:         basePath,
+		anonCookie:       middleware.AnonCookieConfig{Path: basePath, Secure: cookieSecure},
+	}
 }
 
 func (h *api) Routes(r *gin.RouterGroup) {
@@ -58,6 +66,7 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	r.GET("/auth/github/callback", h.OAuthCallback(service.OAuthProviderGitHub))
 	r.POST("/auth/github/device", h.GitHubDeviceStart)
 	r.POST("/auth/github/device/token", h.GitHubDevicePoll)
+	r.GET("/auth/me", h.Me)
 
 	r.GET("/projects", h.ListProjects)
 	r.GET("/projects/:id", h.GetProject)
@@ -212,6 +221,35 @@ func (h *api) GitHubDevicePoll(c *gin.Context) {
 	}
 	// Not authorized yet: 202 tells the client to keep polling.
 	c.JSON(http.StatusAccepted, dto.DeviceStatusResponse{Status: string(status)})
+}
+
+// Me reports the current identity without provisioning one: a real user (bearer
+// token), an existing anonymous user (anon_token cookie), or none. Anonymous
+// users are only created when someone actually rates or comments.
+func (h *api) Me(c *gin.Context) {
+	ctx := c.Request.Context()
+	if token := h.jwt.ExtractBearerToken(c.Request); token != "" {
+		if claims, err := h.jwt.Parse(token); err == nil {
+			h.writeIdentity(c, ctx, claims.UserID)
+			return
+		}
+	}
+	if raw, err := c.Cookie(middleware.AnonCookieName); err == nil && raw != "" {
+		if userID, ok, err := h.svc.ResolveAnonToken(ctx, raw); err == nil && ok {
+			h.writeIdentity(c, ctx, userID)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"identity": nil})
+}
+
+func (h *api) writeIdentity(c *gin.Context, ctx context.Context, userID int64) {
+	identity, err := h.svc.GetIdentity(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"identity": nil})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"identity": identity})
 }
 
 func (h *api) oauthCookieConfigFor(provider service.OAuthProvider) oauthCookieConfig {

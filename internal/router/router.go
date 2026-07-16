@@ -29,7 +29,7 @@ func New(cfg config.Config, jwt *auth.JWT, svc service.Service) http.Handler {
 	}))
 
 	basePath := config.BasePath()
-	api := handler.New(svc, jwt, cfg.OAuthRedirectURI, basePath)
+	api := handler.New(svc, jwt, cfg.OAuthRedirectURI, basePath, cfg.CookieSecure)
 	api.Routes(r.Group(basePath))
 
 	return r

@@ -19,7 +19,7 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
 	r := gin.New()
-	New(nil, jwt, "http://localhost/redirect", "/portfolio/v1").Routes(r.Group("/portfolio/v1"))
+	New(nil, jwt, "http://localhost/redirect", "/portfolio/v1", false).Routes(r.Group("/portfolio/v1"))
 	return r
 }
 

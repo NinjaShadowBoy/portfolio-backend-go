@@ -41,7 +41,7 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # Same build flags as `make docker` / the Dockerfile — kept in the Makefile
+      # Same build flags as `make docker` / the Dockerfile -  kept in the Makefile
       # as the single source of truth for the build command.
       - name: Build binary
         run: make build
@@ -68,7 +68,7 @@ jobs:
           path: bin/
 
       # Only the environment name is derived in CI. The bound port is NOT
-      # duplicated here — it is read back from the deployed .env (its single
+      # duplicated here -  it is read back from the deployed .env (its single
       # source of truth) during the health check below.
       - name: Resolve deployment environment
         id: vars

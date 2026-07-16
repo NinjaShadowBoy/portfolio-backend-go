@@ -19,11 +19,11 @@ These two config values are easy to confuse. They are **different hops** in the 
 | `OAUTH_BASE_URL` | your **backend** (`:8080`, incl. `/portfolio/v1`) | building the provider callback URL you register in Google/GitHub | Google / GitHub, after consent |
 | `OAUTH2_REDIRECT_URI` | your **frontend** (`:4200`) | the page the backend forwards you to after login | your backend, once the JWT is minted |
 
-- `OAUTH_BASE_URL` — the backend appends `/auth/{google|github}/callback` to it
+- `OAUTH_BASE_URL` -  the backend appends `/auth/{google|github}/callback` to it
   (`service.go`), so `http://localhost:8080/portfolio/v1` →
   `http://localhost:8080/portfolio/v1/auth/google/callback`. This is what you register
   with the provider, character-for-character.
-- `OAUTH2_REDIRECT_URI` — a real Angular route (`/oauth2/redirect`). The backend redirects
+- `OAUTH2_REDIRECT_URI` -  a real Angular route (`/oauth2/redirect`). The backend redirects
   here with `?token=<jwt>` (success) or `?error=<msg>` (failure). It is a **UI route, not an
   API route**, so it is *not* versioned.
 
@@ -83,7 +83,7 @@ If you deploy the frontend on a different host/port, update `OAUTH2_REDIRECT_URI
 sure that origin is in `CORS_ALLOWED_ORIGINS`. Keep `OAUTH_BASE_URL`'s `/portfolio/v1` suffix
 in sync with the frontend's `apiBaseUrl` and the router `APIVersion`.
 
-A provider whose client id/secret is left blank is simply disabled — its button will
+A provider whose client id/secret is left blank is simply disabled -  its button will
 redirect back with `?error=OAuth2 is not configured` instead of crashing.
 
 ---
@@ -123,7 +123,7 @@ pnpm start        # serves on http://localhost:4200
 3. Approve the consent screen.
 4. You should be redirected to `/oauth2/redirect?token=...`, then land on `/home` logged in.
    - Check `localStorage` has `auth.token` set.
-5. Failure check: blank out a provider's credentials and click its button — you should be
+5. Failure check: blank out a provider's credentials and click its button -  you should be
    sent back to `/login` with an error toast.
 
 ---
@@ -132,7 +132,7 @@ pnpm start        # serves on http://localhost:4200
 
 Besides the browser redirect flow, GitHub sign-in is also available via the
 [device authorization flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)
-— useful for clients without a usable browser redirect. It needs **no client secret**, but
+-  useful for clients without a usable browser redirect. It needs **no client secret**, but
 you must tick **"Enable Device Flow"** in your GitHub OAuth App settings (it reuses the same
 `GITHUB_CLIENT_ID`).
 
@@ -178,14 +178,14 @@ Key files:
 
 - **Fixed a boot-blocking migration**: `db/migrations/001_init.sql` previously started with
   `CREATE DATABASE portfolio; USE portfolio;`, which is invalid Postgres and made the app fail
-  to start on a fresh setup. Those lines were removed (see step 3 — create the DB manually).
+  to start on a fresh setup. Those lines were removed (see step 3 -  create the DB manually).
 - **Passwords are now hashed with bcrypt** (`internal/auth/password.go`). New registrations are
   hashed on the way in; old plaintext rows still verify (and get no worse). This does not affect
   OAuth users, who have no password.
 - **Facebook** is intentionally not wired up (only Google + GitHub have code), so the
   `FACEBOOK_*` vars were dropped from `.env.example`.
 - **API versioning added**: all routes moved from `/portfolio` to `/portfolio/v1`. The version
-  lives in one place — `APIPrefix`/`APIVersion` in `internal/router/router.go` — and the OAuth
+  lives in one place -  `APIPrefix`/`APIVersion` in `internal/router/router.go` -  and the OAuth
   cookie callback paths are derived from it, so a future `v2` only needs a new route group.
   The frontend `apiBaseUrl` (both `environment.ts` and `environment.prod.ts`) and
   `OAUTH_BASE_URL` were updated to match.

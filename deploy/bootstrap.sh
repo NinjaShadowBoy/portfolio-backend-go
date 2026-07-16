@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
 # One-time VPS setup for the portfolio backend. Run once on the server as a
-# sudo-capable user, from the repo's deploy/ directory (or anywhere — it finds
+# sudo-capable user, from the repo's deploy/ directory (or anywhere -  it finds
 # its own dir). Safe to re-run; it is idempotent.
 #
 #   APP_PATH=/opt/portfolio ./bootstrap.sh
 #
 # It creates the service user, the per-environment directories, placeholder .env
 # files, and installs + enables the systemd unit. It does NOT start the service
-# (there is no binary yet — the first CI deploy ships it, then start it).
+# (there is no binary yet -  the first CI deploy ships it, then start it).
 set -euo pipefail
 
 APP_PATH="${APP_PATH:-/opt/portfolio}"
@@ -18,7 +18,7 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "APP_PATH=$APP_PATH  APP_USER=$APP_USER"
 
-# 1. Service user — system account, no login shell.
+# 1. Service user -  system account, no login shell.
 if ! id "$APP_USER" >/dev/null 2>&1; then
   echo "Creating service user $APP_USER"
   sudo useradd --system --home-dir "$APP_PATH" --shell /usr/sbin/nologin "$APP_USER"

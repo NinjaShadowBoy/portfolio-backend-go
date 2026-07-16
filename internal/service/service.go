@@ -830,15 +830,9 @@ func (s *service) CreateRating(ctx context.Context, userID int64, req dto.Rating
 	if err := s.requireProject(ctx, req.ProjectID); err != nil {
 		return dto.Rating{}, err
 	}
-	exists, err := s.Q.RatingExistsByUserProject(ctx, userID, req.ProjectID)
-	if err != nil {
-		return dto.Rating{}, err
-	}
-	if exists {
-		return dto.Rating{}, ErrConflict
-	}
 
-	rating, err := s.Q.CreateRating(ctx, int32(req.Rating), nullableString(req.Comment), userID, req.ProjectID)
+	// A star is one-per-identity-per-project: upsert rather than reject repeats.
+	rating, err := s.Q.UpsertRating(ctx, int32(req.Rating), userID, req.ProjectID)
 	if err != nil {
 		return dto.Rating{}, err
 	}
@@ -860,20 +854,12 @@ func (s *service) UpdateRating(ctx context.Context, id int64, userID int64, req 
 		return dto.Rating{}, ErrForbidden
 	}
 
-	commentValue := ""
-	if rating.Comment.Valid {
-		commentValue = rating.Comment.String
-	}
-	if req.Comment != nil {
-		commentValue = *req.Comment
-	}
-
 	ratingValue := rating.Rating
 	if req.Rating != nil {
 		ratingValue = int32(*req.Rating)
 	}
 
-	updated, err := s.Q.UpdateRating(ctx, id, ratingValue, commentValue)
+	updated, err := s.Q.UpdateRating(ctx, id, ratingValue)
 	if err != nil {
 		return dto.Rating{}, err
 	}
@@ -1096,7 +1082,6 @@ func ratingToDTO(rating db.Rating, userName string) dto.Rating {
 		UserName:  userName,
 		ProjectID: rating.ProjectID,
 		Rating:    int(rating.Rating),
-		Comment:   dto.NullString(rating.Comment),
 		CreatedAt: rating.CreatedAt,
 		UpdatedAt: rating.UpdatedAt,
 	}

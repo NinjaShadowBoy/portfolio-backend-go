@@ -26,11 +26,11 @@ environment:
 
 ## Where the `.env` file goes
 
-**`/opt/portfolio/<env>/.env`** — e.g. `/opt/portfolio/production/.env`.
+**`/opt/portfolio/<env>/.env`** -  e.g. `/opt/portfolio/production/.env`.
 
 The app reads `.env` from its working directory, which the systemd unit sets to
 that folder. `PORT` in this file is the single source of truth for the bound
-port — the deploy's health check reads it back from here rather than hardcoding
+port -  the deploy's health check reads it back from here rather than hardcoding
 it.
 
 You have two ways to manage it:
@@ -56,7 +56,7 @@ APP_PATH=/opt/portfolio ./bootstrap.sh
 
 This creates the `portfolio` service user, the directories, placeholder `.env`
 files, and installs + enables the `portfolio-backend@.service` systemd unit for
-both environments. It does not start the service — the first CI deploy ships the
+both environments. It does not start the service -  the first CI deploy ships the
 binary, after which:
 
 ```bash
@@ -75,13 +75,13 @@ deployuser ALL=(root) NOPASSWD: /bin/systemctl restart portfolio-backend@*, \
                                  /bin/systemctl is-active portfolio-backend@*
 ```
 
-(adjust `deployuser` and the `systemctl` path — `which systemctl`, often
+(adjust `deployuser` and the `systemctl` path -  `which systemctl`, often
 `/usr/bin/systemctl`).
 
 ## Collecting logs
 
 All output goes to **journald** (tagged `portfolio-backend-<env>`), so `journalctl`
-is the single place to look — no log files to rotate.
+is the single place to look -  no log files to rotate.
 
 ```bash
 # Follow live (production)

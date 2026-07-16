@@ -56,3 +56,26 @@ SELECT EXISTS (
     FROM users
     WHERE email = $1
 );
+
+-- name: CountUsersByNamePrefix :one
+SELECT COUNT(*)::integer
+FROM users
+WHERE name LIKE $1;
+
+-- name: UpdateUserProfile :one
+UPDATE users
+SET name = COALESCE(sqlc.narg('name'), name),
+    image_url = COALESCE(sqlc.narg('image_url'), image_url),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING *;
+
+-- name: UpdateUserPassword :exec
+UPDATE users
+SET pwd = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1;

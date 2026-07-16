@@ -21,15 +21,17 @@ FROM ratings
 WHERE user_id = $1
 ORDER BY created_at DESC, id DESC;
 
--- name: CreateRating :one
-INSERT INTO ratings (rating, comment, user_id, project_id)
-VALUES ($1, $2, $3, $4)
+-- name: UpsertRating :one
+INSERT INTO ratings (rating, user_id, project_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, project_id)
+DO UPDATE SET rating = EXCLUDED.rating,
+              updated_at = CURRENT_TIMESTAMP
 RETURNING *;
 
 -- name: UpdateRating :one
 UPDATE ratings
 SET rating = COALESCE($2::integer, rating),
-    comment = COALESCE($3::varchar(2000), comment),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
@@ -41,6 +43,18 @@ WHERE id = $1 AND user_id = $2;
 -- name: DeleteRatingsByProjectID :exec
 DELETE FROM ratings
 WHERE project_id = $1;
+
+-- name: DeleteRatingsByUserID :exec
+DELETE FROM ratings
+WHERE user_id = $1;
+
+-- Move an anon user's ratings onto a real account, skipping projects the account
+-- has already rated (the account's existing star wins those).
+-- name: ReassignRatingsToUser :exec
+UPDATE ratings AS r
+SET user_id = $1
+WHERE r.user_id = $2
+  AND r.project_id NOT IN (SELECT existing.project_id FROM ratings AS existing WHERE existing.user_id = $1);
 
 -- name: RatingExistsByUserProject :one
 SELECT EXISTS (

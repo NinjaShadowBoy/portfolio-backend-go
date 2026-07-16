@@ -7,36 +7,9 @@ package db
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/lib/pq"
 )
-
-const createRating = `-- name: CreateRating :one
-INSERT INTO ratings (rating, comment, user_id, project_id)
-VALUES ($1, $2, $3, $4)
-RETURNING id, rating, comment, user_id, project_id, created_at, updated_at
-`
-
-func (q *Queries) CreateRating(ctx context.Context, rating int32, comment sql.NullString, userID int64, projectID int64) (Rating, error) {
-	row := q.db.QueryRowContext(ctx, createRating,
-		rating,
-		comment,
-		userID,
-		projectID,
-	)
-	var i Rating
-	err := row.Scan(
-		&i.ID,
-		&i.Rating,
-		&i.Comment,
-		&i.UserID,
-		&i.ProjectID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
 
 const deleteRating = `-- name: DeleteRating :execrows
 DELETE FROM ratings
@@ -61,8 +34,18 @@ func (q *Queries) DeleteRatingsByProjectID(ctx context.Context, projectID int64)
 	return err
 }
 
+const deleteRatingsByUserID = `-- name: DeleteRatingsByUserID :exec
+DELETE FROM ratings
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteRatingsByUserID(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteRatingsByUserID, userID)
+	return err
+}
+
 const getRating = `-- name: GetRating :one
-SELECT id, rating, comment, user_id, project_id, created_at, updated_at
+SELECT id, rating, user_id, project_id, created_at, updated_at
 FROM ratings
 WHERE id = $1
 LIMIT 1
@@ -74,7 +57,6 @@ func (q *Queries) GetRating(ctx context.Context, id int64) (Rating, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Rating,
-		&i.Comment,
 		&i.UserID,
 		&i.ProjectID,
 		&i.CreatedAt,
@@ -138,7 +120,7 @@ func (q *Queries) ListRatingAggregatesByProjectIDs(ctx context.Context, dollar_1
 }
 
 const listRatings = `-- name: ListRatings :many
-SELECT id, rating, comment, user_id, project_id, created_at, updated_at
+SELECT id, rating, user_id, project_id, created_at, updated_at
 FROM ratings
 ORDER BY created_at DESC, id DESC
 `
@@ -155,7 +137,6 @@ func (q *Queries) ListRatings(ctx context.Context) ([]Rating, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Rating,
-			&i.Comment,
 			&i.UserID,
 			&i.ProjectID,
 			&i.CreatedAt,
@@ -175,7 +156,7 @@ func (q *Queries) ListRatings(ctx context.Context) ([]Rating, error) {
 }
 
 const listRatingsByProjectID = `-- name: ListRatingsByProjectID :many
-SELECT id, rating, comment, user_id, project_id, created_at, updated_at
+SELECT id, rating, user_id, project_id, created_at, updated_at
 FROM ratings
 WHERE project_id = $1
 ORDER BY created_at DESC, id DESC
@@ -193,7 +174,6 @@ func (q *Queries) ListRatingsByProjectID(ctx context.Context, projectID int64) (
 		if err := rows.Scan(
 			&i.ID,
 			&i.Rating,
-			&i.Comment,
 			&i.UserID,
 			&i.ProjectID,
 			&i.CreatedAt,
@@ -213,7 +193,7 @@ func (q *Queries) ListRatingsByProjectID(ctx context.Context, projectID int64) (
 }
 
 const listRatingsByUserID = `-- name: ListRatingsByUserID :many
-SELECT id, rating, comment, user_id, project_id, created_at, updated_at
+SELECT id, rating, user_id, project_id, created_at, updated_at
 FROM ratings
 WHERE user_id = $1
 ORDER BY created_at DESC, id DESC
@@ -231,7 +211,6 @@ func (q *Queries) ListRatingsByUserID(ctx context.Context, userID int64) ([]Rati
 		if err := rows.Scan(
 			&i.ID,
 			&i.Rating,
-			&i.Comment,
 			&i.UserID,
 			&i.ProjectID,
 			&i.CreatedAt,
@@ -327,22 +306,57 @@ func (q *Queries) RatingExistsByUserProject(ctx context.Context, userID int64, p
 	return exists, err
 }
 
+const reassignRatingsToUser = `-- name: ReassignRatingsToUser :exec
+UPDATE ratings AS r
+SET user_id = $1
+WHERE r.user_id = $2
+  AND r.project_id NOT IN (SELECT existing.project_id FROM ratings AS existing WHERE existing.user_id = $1)
+`
+
+// Move an anon user's ratings onto a real account, skipping projects the account
+// has already rated (the account's existing star wins those).
+func (q *Queries) ReassignRatingsToUser(ctx context.Context, userID int64, userID_2 int64) error {
+	_, err := q.db.ExecContext(ctx, reassignRatingsToUser, userID, userID_2)
+	return err
+}
+
 const updateRating = `-- name: UpdateRating :one
 UPDATE ratings
 SET rating = COALESCE($2::integer, rating),
-    comment = COALESCE($3::varchar(2000), comment),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, rating, comment, user_id, project_id, created_at, updated_at
+RETURNING id, rating, user_id, project_id, created_at, updated_at
 `
 
-func (q *Queries) UpdateRating(ctx context.Context, iD int64, column2 int32, column3 string) (Rating, error) {
-	row := q.db.QueryRowContext(ctx, updateRating, iD, column2, column3)
+func (q *Queries) UpdateRating(ctx context.Context, iD int64, column2 int32) (Rating, error) {
+	row := q.db.QueryRowContext(ctx, updateRating, iD, column2)
 	var i Rating
 	err := row.Scan(
 		&i.ID,
 		&i.Rating,
-		&i.Comment,
+		&i.UserID,
+		&i.ProjectID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertRating = `-- name: UpsertRating :one
+INSERT INTO ratings (rating, user_id, project_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, project_id)
+DO UPDATE SET rating = EXCLUDED.rating,
+              updated_at = CURRENT_TIMESTAMP
+RETURNING id, rating, user_id, project_id, created_at, updated_at
+`
+
+func (q *Queries) UpsertRating(ctx context.Context, rating int32, userID int64, projectID int64) (Rating, error) {
+	row := q.db.QueryRowContext(ctx, upsertRating, rating, userID, projectID)
+	var i Rating
+	err := row.Scan(
+		&i.ID,
+		&i.Rating,
 		&i.UserID,
 		&i.ProjectID,
 		&i.CreatedAt,

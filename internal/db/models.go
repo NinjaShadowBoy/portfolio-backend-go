@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+type AnonToken struct {
+	TokenHash string    `json:"tokenHash"`
+	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type Comment struct {
+	ID        int64     `json:"id"`
+	Body      string    `json:"body"`
+	UserID    int64     `json:"userId"`
+	ProjectID int64     `json:"projectId"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type ContactMessage struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
@@ -45,13 +60,12 @@ type ProjectTechnology struct {
 }
 
 type Rating struct {
-	ID        int64          `json:"id"`
-	Rating    int32          `json:"rating"`
-	Comment   sql.NullString `json:"comment"`
-	UserID    int64          `json:"userId"`
-	ProjectID int64          `json:"projectId"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	ID        int64     `json:"id"`
+	Rating    int32     `json:"rating"`
+	UserID    int64     `json:"userId"`
+	ProjectID int64     `json:"projectId"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type User struct {

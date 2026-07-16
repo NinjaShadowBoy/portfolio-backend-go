@@ -13,7 +13,7 @@ Group=portfolio
 
 # The binary, db/migrations and .env all live in the per-env directory. The app
 # loads .env from its working directory itself, so there is no EnvironmentFile
-# here — one mechanism, one source of truth.
+# here -  one mechanism, one source of truth.
 WorkingDirectory=__APP_PATH__/%i
 ExecStart=__APP_PATH__/%i/portfolio-backend
 

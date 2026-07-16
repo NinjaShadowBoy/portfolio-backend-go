@@ -1,4 +1,4 @@
-# Refresh tokens + VPS frontend deploy — design
+# Refresh tokens + VPS frontend deploy -  design
 
 Date: 2026-07-16
 Repos: `portfolio-backend-go` (Go/Gin), `portfolio-app` (Angular SSR)
@@ -32,18 +32,18 @@ Two independent pieces of work, bundled because they touch the same deploy surfa
 
 ---
 
-## Part 1 — Refresh tokens (backend)
+## Part 1 -  Refresh tokens (backend)
 
 ### 1.1 Token model
 
-- **Access token:** unchanged shape — stateless HS256 JWT, Bearer-authenticated,
+- **Access token:** unchanged shape -  stateless HS256 JWT, Bearer-authenticated,
   `Type: "ACCESS"`. Default lifetime drops from 24h to **15 min**.
 - **Refresh token:** opaque 256-bit random string (base64url). Only its
   **SHA-256 hash** is stored. Chosen over a JWT refresh token because revocation
   and reuse-detection require server-side state; a stateless JWT can't be revoked
   without a blocklist that negates the benefit.
 
-### 1.2 Database — new migration `db/migrations/002_refresh_tokens.sql`
+### 1.2 Database -  new migration `db/migrations/002_refresh_tokens.sql`
 
 Leaves `001_init.sql` untouched (already applied on the VPS).
 
@@ -66,15 +66,15 @@ DROP TABLE IF EXISTS refresh_tokens;
 ```
 
 `family_id` uses `UUID` (Postgres `gen_random_uuid()` available via pgcrypto in
-PG13+, or generated app-side — app-side chosen to avoid an extension dependency).
+PG13+, or generated app-side -  app-side chosen to avoid an extension dependency).
 
-### 1.3 sqlc queries — `db/queries/refresh_tokens.sql`
+### 1.3 sqlc queries -  `db/queries/refresh_tokens.sql`
 
 - `CreateRefreshToken` (user_id, family_id, token_hash, expires_at) → row
 - `GetRefreshTokenByHash` (token_hash) → row (includes revoked_at, expires_at)
-- `RevokeRefreshToken` (id) — set revoked_at = now
-- `RevokeRefreshTokenFamily` (family_id) — set revoked_at = now WHERE revoked_at IS NULL
-- `DeleteExpiredRefreshTokens` () — housekeeping, called opportunistically
+- `RevokeRefreshToken` (id) -  set revoked_at = now
+- `RevokeRefreshTokenFamily` (family_id) -  set revoked_at = now WHERE revoked_at IS NULL
+- `DeleteExpiredRefreshTokens` () -  housekeeping, called opportunistically
 
 Run `sqlc -f db/sqlc.yaml generate` after adding.
 
@@ -103,11 +103,11 @@ Run `sqlc -f db/sqlc.yaml generate` after adding.
 
 New routes under the existing auth group:
 
-- `POST /auth/refresh` — no body; reads the refresh cookie; on success sets the
+- `POST /auth/refresh` -  no body; reads the refresh cookie; on success sets the
   new refresh cookie and returns `LoginResponse` (access token + user). On
   failure clears the cookie and returns 401.
-- `POST /auth/logout` — reads the refresh cookie, revokes the family, clears the
-  cookie, returns 200 (200 even if no cookie — logout is idempotent).
+- `POST /auth/logout` -  reads the refresh cookie, revokes the family, clears the
+  cookie, returns 200 (200 even if no cookie -  logout is idempotent).
 
 `Login`, the OAuth callback, and the device-flow completion all set the refresh
 cookie in addition to their current responses. The OAuth callback sets it during
@@ -142,12 +142,12 @@ Backend gate: `go vet ./...`, `go test ./...`, `make build`.
 
 ---
 
-## Part 2 — Refresh tokens (frontend `portfolio-app`)
+## Part 2 -  Refresh tokens (frontend `portfolio-app`)
 
 ### 2.1 Auth service
 
 - **Access token in memory only.** Remove the `localStorage` persistence for
-  `auth.token` (keep `auth.user` optional, or also drop — see 2.4). The token
+  `auth.token` (keep `auth.user` optional, or also drop -  see 2.4). The token
   signal is the single source.
 - `login`, `register`, device calls, and the new `refresh`/`logout` calls use
   `{ withCredentials: true }` so the cookie is stored and sent cross-site.
@@ -160,7 +160,7 @@ Backend gate: `go vet ./...`, `go test ./...`, `make build`.
   `refresh()` once silently to restore a session from the cookie (an
   `APP_INITIALIZER` / provider factory, browser-only via `isPlatformBrowser`).
 
-### 2.2 Interceptor — seamless refresh
+### 2.2 Interceptor -  seamless refresh
 
 `auth.interceptor.ts` becomes stateful (inject `AuthService`):
 - attach `Authorization: Bearer <token()>` when present (read from the service
@@ -186,7 +186,7 @@ uses `withCredentials` where it needs the cookie.
 
 ---
 
-## Part 3 — Frontend deploy on the VPS (nginx + SSR)
+## Part 3 -  Frontend deploy on the VPS (nginx + SSR)
 
 Mirrors the backend's existing systemd + rsync + GitHub Actions pattern.
 
@@ -201,7 +201,7 @@ Mirrors the backend's existing systemd + rsync + GitHub Actions pattern.
   VPS. (Default Angular esbuild server bundle is self-contained; confirm with a
   smoke run during implementation.)
 
-### 3.2 systemd — `portfolio-frontend@.service` (in `portfolio-app/deploy/`)
+### 3.2 systemd -  `portfolio-frontend@.service` (in `portfolio-app/deploy/`)
 
 Templated like the backend unit: `%i` = environment, `__APP_PATH__` substituted
 by a bootstrap script. `WorkingDirectory=__APP_PATH__/%i`,
@@ -222,14 +222,14 @@ Two server blocks (kept in the repos under `deploy/nginx/` and documented):
 - **`alexabena.me` / `alexabena.space`** → `proxy_pass http://127.0.0.1:4000;`
   (SSR). `proxy_http_version 1.1`, forward standard proxy headers, TLS via
   certbot. Static assets are served by the SSR Express layer (`express.static`
-  with 1y cache) — nginx can additionally cache/serve `/browser` if desired, but
+  with 1y cache) -  nginx can additionally cache/serve `/browser` if desired, but
   proxying everything to SSR is the simple correct default.
 
 Backend sets `Secure` on the cookie unconditionally; nginx terminates TLS so the
 browser always sees HTTPS. CORS `AllowOrigins` already includes the frontend
 origins; keep `AllowCredentials: true`.
 
-### 3.4 Frontend CI — `.github/workflows/deploy.yml` (in `portfolio-app` repo)
+### 3.4 Frontend CI -  `.github/workflows/deploy.yml` (in `portfolio-app` repo)
 
 New workflow, structured like the backend's: build job (`npm ci`,
 `ng build --localize`, upload `dist/` artifact) + deploy job (rsync `dist/` to
@@ -239,7 +239,7 @@ Environments hold secrets, reusing the VPS host/user/key pattern.
 
 ### 3.5 Docs / bootstrap
 
-- `portfolio-app/deploy/bootstrap.sh` — one-time VPS setup for the frontend
+- `portfolio-app/deploy/bootstrap.sh` -  one-time VPS setup for the frontend
   (Node install check, dirs, placeholder env, install+enable the unit).
 - Extend `portfolio-backend-go/deploy/DEPLOY.md` (or a new frontend DEPLOY.md) to
   cover: nginx config install, certbot, the frontend systemd unit, journald log
@@ -253,7 +253,7 @@ Environments hold secrets, reusing the VPS host/user/key pattern.
 - Migrating the existing GitHub Pages deploy away (the `build:gh-pages` script and
   `deploy` npm script stay; VPS deploy is additive).
 - Rate limiting on `/auth/*` (nice-to-have, not required here).
-- CSRF tokens for the refresh endpoint — refresh relies on the cookie + a
+- CSRF tokens for the refresh endpoint -  refresh relies on the cookie + a
   same-origin-less design; because the access token is Bearer (not cookie) and
   refresh returns tokens in the body (not acting on cookie-authenticated state
   mutations), classic CSRF on refresh yields nothing usable to an attacker. Noted

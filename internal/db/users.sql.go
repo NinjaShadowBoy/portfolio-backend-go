@@ -12,6 +12,19 @@ import (
 	"github.com/lib/pq"
 )
 
+const countUsersByNamePrefix = `-- name: CountUsersByNamePrefix :one
+SELECT COUNT(*)::integer
+FROM users
+WHERE name LIKE $1
+`
+
+func (q *Queries) CountUsersByNamePrefix(ctx context.Context, name string) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countUsersByNamePrefix, name)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, pwd, name, provider, provider_id, image_url, email_verified, last_login_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -45,6 +58,16 @@ func (q *Queries) CreateUser(ctx context.Context, email string, pwd sql.NullStri
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
@@ -83,6 +106,34 @@ LIMIT 1
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Pwd,
+		&i.Name,
+		&i.Role,
+		&i.Provider,
+		&i.ProviderID,
+		&i.ImageUrl,
+		&i.EmailVerified,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByProvider = `-- name: GetUserByProvider :one
+SELECT id, email, pwd, name, role, provider, provider_id, image_url, email_verified, last_login_at, created_at, updated_at
+FROM users
+WHERE provider = $1
+  AND provider_id = $2
+LIMIT 1
+`
+
+func (q *Queries) GetUserByProvider(ctx context.Context, provider string, providerID sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByProvider, provider, providerID)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -143,34 +194,6 @@ func (q *Queries) GetUsersByIDs(ctx context.Context, dollar_1 []int64) ([]User, 
 	return items, nil
 }
 
-const getUserByProvider = `-- name: GetUserByProvider :one
-SELECT id, email, pwd, name, role, provider, provider_id, image_url, email_verified, last_login_at, created_at, updated_at
-FROM users
-WHERE provider = $1
-  AND provider_id = $2
-LIMIT 1
-`
-
-func (q *Queries) GetUserByProvider(ctx context.Context, provider string, providerID sql.NullString) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByProvider, provider, providerID)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Pwd,
-		&i.Name,
-		&i.Role,
-		&i.Provider,
-		&i.ProviderID,
-		&i.ImageUrl,
-		&i.EmailVerified,
-		&i.LastLoginAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const updateUserLogin = `-- name: UpdateUserLogin :one
 UPDATE users
 SET last_login_at = $2
@@ -219,6 +242,47 @@ func (q *Queries) UpdateUserOAuthProfile(ctx context.Context, iD int64, name str
 		imageUrl,
 		emailVerified,
 	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Pwd,
+		&i.Name,
+		&i.Role,
+		&i.Provider,
+		&i.ProviderID,
+		&i.ImageUrl,
+		&i.EmailVerified,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users
+SET pwd = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, iD int64, pwd sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, updateUserPassword, iD, pwd)
+	return err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET name = COALESCE($2, name),
+    image_url = COALESCE($3, image_url),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, email, pwd, name, role, provider, provider_id, image_url, email_verified, last_login_at, created_at, updated_at
+`
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, iD int64, name sql.NullString, imageUrl sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserProfile, iD, name, imageUrl)
 	var i User
 	err := row.Scan(
 		&i.ID,

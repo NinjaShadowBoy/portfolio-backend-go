@@ -101,20 +101,49 @@ type Rating struct {
 	UserName  string    `json:"userName"`
 	ProjectID int64     `json:"projectId"`
 	Rating    int       `json:"rating"`
-	Comment   *string   `json:"comment"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type RatingCreate struct {
-	ProjectID int64   `json:"projectId"`
-	Rating    int     `json:"rating"`
-	Comment   *string `json:"comment"`
+	ProjectID int64 `json:"projectId"`
+	Rating    int   `json:"rating"`
 }
 
 type RatingUpdate struct {
-	Rating  *int    `json:"rating"`
-	Comment *string `json:"comment"`
+	Rating *int `json:"rating"`
+}
+
+type Comment struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"userId"`
+	UserName  string    `json:"userName"`
+	UserImage *string   `json:"userImage"`
+	ProjectID int64     `json:"projectId"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type CommentCreate struct {
+	ProjectID int64  `json:"projectId"`
+	Body      string `json:"body"`
+}
+
+type CommentUpdate struct {
+	Body string `json:"body"`
+}
+
+// Identity is the current caller as resolved by EnsureIdentity: a real account,
+// an auto-provisioned anonymous user, or nobody yet.
+type Identity struct {
+	ID        int64   `json:"id"`
+	Name      string  `json:"name"`
+	Role      string  `json:"role"`
+	Provider  string  `json:"provider"`
+	ImageURL  *string `json:"imageUrl"`
+	Anonymous bool    `json:"anonymous"`
+	Email     string  `json:"email,omitempty"`
 }
 
 type Photo struct {

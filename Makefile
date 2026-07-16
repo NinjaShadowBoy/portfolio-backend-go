@@ -10,7 +10,7 @@ test:
 	go test ./...
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
 
 docker:
 	docker build -t portfolio-backend-go .

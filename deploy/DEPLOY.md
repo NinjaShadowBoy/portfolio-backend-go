@@ -28,8 +28,10 @@ environment:
 
 **`/opt/portfolio/<env>/.env`** — e.g. `/opt/portfolio/production/.env`.
 
-The app reads `.env` from its working directory (which the systemd unit sets to
-that folder), and systemd also loads it via `EnvironmentFile`.
+The app reads `.env` from its working directory, which the systemd unit sets to
+that folder. `PORT` in this file is the single source of truth for the bound
+port — the deploy's health check reads it back from here rather than hardcoding
+it.
 
 You have two ways to manage it:
 
@@ -111,7 +113,8 @@ Service health at a glance:
 
 ```bash
 systemctl status portfolio-backend@production
-curl -fsS http://127.0.0.1:8080/portfolio/v1/cron   # 200 = healthy (staging: 8081)
+# Same probe the deploy runs; $PORT is whatever PORT is set to in that env's .env.
+curl -fsS "http://127.0.0.1:$(grep -oE '^PORT=[0-9]+' /opt/portfolio/production/.env | grep -oE '[0-9]+')/portfolio/v1/cron"
 ```
 
 > journald keeps logs in a ring buffer capped by disk. To retain more, set

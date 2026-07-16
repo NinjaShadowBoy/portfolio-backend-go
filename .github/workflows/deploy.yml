@@ -41,8 +41,10 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # Same build flags as `make docker` / the Dockerfile — kept in the Makefile
+      # as the single source of truth for the build command.
       - name: Build binary
-        run: CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
+        run: make build
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -65,15 +67,16 @@ jobs:
           name: backend-binary
           path: bin/
 
-      - name: Resolve deployment variables
+      # Only the environment name is derived in CI. The bound port is NOT
+      # duplicated here — it is read back from the deployed .env (its single
+      # source of truth) during the health check below.
+      - name: Resolve deployment environment
         id: vars
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "env=production" >> "$GITHUB_OUTPUT"
-            echo "port=8080"      >> "$GITHUB_OUTPUT"
           else
-            echo "env=staging"    >> "$GITHUB_OUTPUT"
-            echo "port=8081"      >> "$GITHUB_OUTPUT"
+            echo "env=staging" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Make binary executable
@@ -91,9 +94,10 @@ jobs:
           remote_user: ${{ secrets.VPS_USER }}
           remote_key: ${{ secrets.VPS_SSH_KEY }}
 
-      # Render the environment file from an environment-scoped secret. The quoted
-      # heredoc prevents the shell from expanding anything inside the secret.
-      - name: Write environment file
+      # One SSH session: render the .env from the environment secret, restart the
+      # service, then confirm it serves before calling the deploy green. The
+      # quoted heredoc prevents any expansion inside the secret.
+      - name: Provision env, restart & health check
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_ENV: ${{ steps.vars.outputs.env }}
@@ -105,6 +109,7 @@ jobs:
           script: |
             set -euo pipefail
             target="${{ vars.APP_PATH }}/$DEPLOY_ENV"
+
             install -d -m 700 "$target"
             umask 077
             cat > "$target/.env" <<'ENVFILE'
@@ -112,33 +117,24 @@ jobs:
             ENVFILE
             chmod 600 "$target/.env"
 
-      # Restart the service and confirm it is actually serving before we call the
-      # deploy green. The cron route returns 200 with no auth.
-      - name: Restart & health check
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          DEPLOY_ENV: ${{ steps.vars.outputs.env }}
-          PORT: ${{ steps.vars.outputs.port }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          envs: DEPLOY_ENV,PORT
-          script: |
-            set -euo pipefail
             svc="portfolio-backend@$DEPLOY_ENV"
             sudo systemctl restart "$svc"
 
-            # Poll the health endpoint for up to ~30s.
+            # Health-check port comes from the .env we just wrote (single source of
+            # truth), defaulting to 8080 to match the app default.
+            port="$(grep -E '^PORT=' "$target/.env" | tail -n1 | grep -oE '[0-9]+' | head -n1)"
+            port="${port:-8080}"
+
+            # Poll the cron route (200, no auth) for up to ~30s.
             for i in $(seq 1 15); do
-              if curl -fsS "http://127.0.0.1:$PORT/portfolio/v1/cron" >/dev/null; then
-                echo "healthy after ${i}x2s"
+              if curl -fsS "http://127.0.0.1:$port/portfolio/v1/cron" >/dev/null; then
+                echo "healthy after $((i * 2))s on port $port"
                 sudo systemctl is-active "$svc"
                 exit 0
               fi
               sleep 2
             done
 
-            echo "::error::$svc failed health check on port $PORT"
+            echo "::error::$svc failed health check on port $port"
             sudo systemctl status "$svc" --no-pager -l | tail -n 40 || true
             exit 1

@@ -7,18 +7,26 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/lib/pq"
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (name, description, featured)
-VALUES ($1, $2, $3)
+INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at
 `
 
-func (q *Queries) CreateProject(ctx context.Context, name string, description string, featured bool) (Project, error) {
-	row := q.db.QueryRowContext(ctx, createProject, name, description, featured)
+func (q *Queries) CreateProject(ctx context.Context, name string, description string, featured bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString) (Project, error) {
+	row := q.db.QueryRowContext(ctx, createProject,
+		name,
+		description,
+		featured,
+		githubLink,
+		challenges,
+		whatILearned,
+	)
 	var i Project
 	err := row.Scan(
 		&i.ID,
@@ -208,17 +216,23 @@ UPDATE projects
 SET name = COALESCE($2::varchar(500), name),
     description = COALESCE($3::text, description),
     featured = COALESCE($4::boolean, featured),
+    github_link = $5,
+    challenges = $6,
+    what_i_learned = $7,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at
 `
 
-func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, column3 string, column4 bool) (Project, error) {
+func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, column3 string, column4 bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString) (Project, error) {
 	row := q.db.QueryRowContext(ctx, updateProject,
 		iD,
 		column2,
 		column3,
 		column4,
+		githubLink,
+		challenges,
+		whatILearned,
 	)
 	var i Project
 	err := row.Scan(

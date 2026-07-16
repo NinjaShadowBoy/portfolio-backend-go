@@ -10,6 +10,11 @@ FROM users
 WHERE id = $1
 LIMIT 1;
 
+-- name: GetUsersByIDs :many
+SELECT *
+FROM users
+WHERE id = ANY($1::bigint[]);
+
 -- name: GetUserByProvider :one
 SELECT *
 FROM users

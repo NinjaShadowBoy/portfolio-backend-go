@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"database/sql"
+
+	"github.com/lib/pq"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -97,6 +99,48 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUsersByIDs = `-- name: GetUsersByIDs :many
+SELECT id, email, pwd, name, role, provider, provider_id, image_url, email_verified, last_login_at, created_at, updated_at
+FROM users
+WHERE id = ANY($1::bigint[])
+`
+
+func (q *Queries) GetUsersByIDs(ctx context.Context, dollar_1 []int64) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, getUsersByIDs, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Pwd,
+			&i.Name,
+			&i.Role,
+			&i.Provider,
+			&i.ProviderID,
+			&i.ImageUrl,
+			&i.EmailVerified,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserByProvider = `-- name: GetUserByProvider :one

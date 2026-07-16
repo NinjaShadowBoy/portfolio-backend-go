@@ -13,7 +13,6 @@ import (
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/config"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/email"
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/repository"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/router"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
 	"github.com/pressly/goose/v3"
@@ -55,18 +54,18 @@ func New(cfg config.Config) (Server, error) {
 		}
 	}
 
-	repo := repository.New(db.New(sqlDB))
+	queries := db.New(sqlDB)
 	jwt := auth.NewJWT(cfg.JWTSecret, cfg.JWTExpiration, cfg.JWTIssuer)
 	emails := email.NewSender(cfg.Email)
 	googleOAuth := service.NewGoogleOAuthConfig(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.OAuthBaseURL)
 	githubOAuth := service.NewGitHubOAuthConfig(cfg.GitHubClientID, cfg.GitHubClientSecret, cfg.OAuthBaseURL)
-	svc := service.New(repo.Queries(), jwt, emails, googleOAuth, githubOAuth)
+	svc := service.New(queries, jwt, emails, googleOAuth, githubOAuth)
 	handler := router.New(cfg, jwt, svc)
 
 	return &server{
 		cfg:     cfg,
 		db:      sqlDB,
-		queries: repo.Queries(),
+		queries: queries,
 		jwt:     jwt,
 		emails:  emails,
 		svc:     svc,

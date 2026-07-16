@@ -10,8 +10,8 @@ WHERE id = $1
 LIMIT 1;
 
 -- name: CreateProject :one
-INSERT INTO projects (name, description, featured)
-VALUES ($1, $2, $3)
+INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: UpdateProject :one
@@ -19,6 +19,9 @@ UPDATE projects
 SET name = COALESCE($2::varchar(500), name),
     description = COALESCE($3::text, description),
     featured = COALESCE($4::boolean, featured),
+    github_link = $5,
+    challenges = $6,
+    what_i_learned = $7,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;

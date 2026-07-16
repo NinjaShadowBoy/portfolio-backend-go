@@ -20,7 +20,10 @@ func New(cfg config.Config, jwt *auth.JWT, svc service.Service) http.Handler {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), requestTimeout(30*time.Second))
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.AllowedOrigins,
+		AllowOrigins: cfg.AllowedOrigins,
+		// Origins may use "*" wildcards (e.g. "http://localhost:*" in dev); without
+		// this they are matched literally and preflights are rejected with 403.
+		AllowWildcard:    true,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Accept", "Authorization", "Content-Type", "X-Auth-Token"},
 		ExposeHeaders:    []string{"Authorization", "Content-Type"},

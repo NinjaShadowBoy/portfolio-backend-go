@@ -78,6 +78,7 @@ type Service interface {
 	CreateAnonymousUser(ctx context.Context) (int64, string, error)
 	ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error)
 	GetIdentity(ctx context.Context, userID int64) (dto.Identity, error)
+	ClaimAnonymousActivity(ctx context.Context, anonUserID, realUserID int64) error
 }
 
 type OAuthLoginStart struct {

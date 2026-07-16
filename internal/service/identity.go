@@ -70,6 +70,38 @@ func (s *service) GetIdentity(ctx context.Context, userID int64) (dto.Identity, 
 	return identityDTO(user), nil
 }
 
+// ClaimAnonymousActivity re-associates an anonymous user's ratings and comments
+// to a real account, then retires the anon user. Comments always transfer; for
+// the one-per-project star, projects the account already rated keep the
+// account's existing star and the anon star is dropped.
+func (s *service) ClaimAnonymousActivity(ctx context.Context, anonUserID, realUserID int64) error {
+	if anonUserID == realUserID {
+		return nil
+	}
+	anon, err := s.Q.GetUserByID(ctx, anonUserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// Safety: only ever absorb a throwaway anonymous account.
+	if anon.Provider != "ANON" {
+		return nil
+	}
+	if err := s.Q.ReassignCommentsToUser(ctx, realUserID, anonUserID); err != nil {
+		return err
+	}
+	if err := s.Q.ReassignRatingsToUser(ctx, realUserID, anonUserID); err != nil {
+		return err
+	}
+	// Any ratings left on the anon user collided with the account's own; drop them.
+	if err := s.Q.DeleteRatingsByUserID(ctx, anonUserID); err != nil {
+		return err
+	}
+	return s.Q.DeleteUser(ctx, anonUserID)
+}
+
 func identityDTO(user db.User) dto.Identity {
 	anon := user.Provider == "ANON"
 	identity := dto.Identity{

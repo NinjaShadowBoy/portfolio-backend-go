@@ -135,7 +135,23 @@ func (h *api) Login(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	h.claimAnonActivity(c, resp.User.ID)
 	c.JSON(http.StatusOK, resp)
+}
+
+// claimAnonActivity absorbs any anonymous ratings/comments the caller made before
+// authenticating into their real account, then clears the anon cookie. Best
+// effort: a failure here must not block the login it rides along with.
+func (h *api) claimAnonActivity(c *gin.Context, realUserID int64) {
+	raw, err := c.Cookie(middleware.AnonCookieName)
+	if err != nil || raw == "" {
+		return
+	}
+	ctx := c.Request.Context()
+	if anonUserID, ok, err := h.svc.ResolveAnonToken(ctx, raw); err == nil && ok {
+		_ = h.svc.ClaimAnonymousActivity(ctx, anonUserID, realUserID)
+	}
+	middleware.ClearAnonCookie(c, h.anonCookie)
 }
 
 func (h *api) Register(c *gin.Context) {
@@ -198,6 +214,7 @@ func (h *api) OAuthCallback(provider service.OAuthProvider) gin.HandlerFunc {
 			return
 		}
 
+		h.claimAnonActivity(c, resp.User.ID)
 		redirectOAuth(c, h.oauthRedirectURI, resp.Token, "")
 	}
 }

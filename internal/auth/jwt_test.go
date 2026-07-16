@@ -35,14 +35,22 @@ func TestJWTGenerateAndParse(t *testing.T) {
 	}
 }
 
-func TestVerifyPlaintextPassword(t *testing.T) {
-	if !VerifyPlaintextPassword(sql.NullString{String: "password", Valid: true}, "password") {
-		t.Fatal("expected plaintext password to match")
+func TestVerifyPassword(t *testing.T) {
+	hashed, err := HashPassword("password")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
 	}
-	if VerifyPlaintextPassword(sql.NullString{String: "password", Valid: true}, "wrong") {
+	if !VerifyPassword(sql.NullString{String: hashed, Valid: true}, "password") {
+		t.Fatal("expected hashed password to match")
+	}
+	if VerifyPassword(sql.NullString{String: hashed, Valid: true}, "wrong") {
 		t.Fatal("expected wrong password to fail")
 	}
-	if VerifyPlaintextPassword(sql.NullString{}, "password") {
+	if VerifyPassword(sql.NullString{}, "password") {
 		t.Fatal("expected missing password to fail")
+	}
+	// Backward compatibility: legacy plaintext values still verify.
+	if !VerifyPassword(sql.NullString{String: "legacy", Valid: true}, "legacy") {
+		t.Fatal("expected legacy plaintext password to match")
 	}
 }

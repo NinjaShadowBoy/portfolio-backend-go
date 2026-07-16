@@ -123,11 +123,13 @@ type googleUserInfo struct {
 }
 
 type githubUserInfo struct {
-	ID        string `json:"id"`
-	Login     string `json:"login"`
-	Name      string `json:"name"`
-	Email     string `json:"email"`
-	AvatarURL string `json:"avatar_url"`
+	// GitHub returns the user id as a JSON number; json.Number accepts it and
+	// yields its string form for use as the opaque provider id.
+	ID        json.Number `json:"id"`
+	Login     string      `json:"login"`
+	Name      string      `json:"name"`
+	Email     string      `json:"email"`
+	AvatarURL string      `json:"avatar_url"`
 }
 
 type githubEmail struct {
@@ -443,7 +445,7 @@ func (s *service) oauthUserInfo(ctx context.Context, provider OAuthProvider, tok
 		}
 		email = strings.TrimSpace(info.Email)
 		verified := email != ""
-		return email, oauthDisplayName(info.Name, info.Login, info.Login), strings.TrimSpace(info.AvatarURL), strings.TrimSpace(info.ID), verified, nil
+		return email, oauthDisplayName(info.Name, info.Login, info.Login), strings.TrimSpace(info.AvatarURL), strings.TrimSpace(info.ID.String()), verified, nil
 	default:
 		return "", "", "", "", false, ErrBadRequest
 	}

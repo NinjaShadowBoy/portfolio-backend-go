@@ -37,6 +37,27 @@ type MessageResponse struct {
 	Message string `json:"message"`
 }
 
+// DeviceCodeResponse is returned when a device-flow login is started. The client
+// shows userCode + verificationUri to the user and then polls with deviceCode.
+type DeviceCodeResponse struct {
+	DeviceCode      string `json:"deviceCode"`
+	UserCode        string `json:"userCode"`
+	VerificationUri string `json:"verificationUri"`
+	ExpiresIn       int    `json:"expiresIn"`
+	Interval        int    `json:"interval"`
+}
+
+// DevicePollRequest is the body the client sends while polling a device-flow login.
+type DevicePollRequest struct {
+	DeviceCode string `json:"deviceCode"`
+}
+
+// DeviceStatusResponse is returned (HTTP 202) while the user has not yet
+// authorized the device. Status is "pending" or "slow_down".
+type DeviceStatusResponse struct {
+	Status string `json:"status"`
+}
+
 type Project struct {
 	ID            int64     `json:"id"`
 	Name          string    `json:"name"`

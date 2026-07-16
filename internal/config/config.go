@@ -51,7 +51,7 @@ func Load() (Config, error) {
 		JWTSecret:          env("JWT_SECRET", "404E635266556A586E3072357538782F413F4428472B4B6250645367566B5970"),
 		JWTExpiration:      time.Duration(expirationMS) * time.Millisecond,
 		JWTIssuer:          env("JWT_ISSUER", "NinjaShadowBoy-PortfolioApp"),
-		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8080/portfolio"),
+		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8080/portfolio/v1"),
 		OAuthRedirectURI:   env("OAUTH2_REDIRECT_URI", "http://localhost:4200/oauth2/redirect"),
 		GoogleClientID:     env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),

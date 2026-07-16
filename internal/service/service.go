@@ -42,6 +42,8 @@ type Service interface {
 	Register(ctx context.Context, req dto.RegisterRequest) error
 	StartOAuthLogin(provider OAuthProvider) (OAuthLoginStart, error)
 	OAuthLogin(ctx context.Context, provider OAuthProvider, code, state, verifier string) (dto.LoginResponse, error)
+	StartGitHubDeviceLogin(ctx context.Context) (DeviceLoginStart, error)
+	PollGitHubDeviceLogin(ctx context.Context, deviceCode string) (dto.LoginResponse, DeviceAuthStatus, error)
 	ListProjects(ctx context.Context) ([]dto.Project, error)
 	GetProject(ctx context.Context, id int64) (dto.Project, error)
 	CreateProject(ctx context.Context, req dto.ProjectCreate) (dto.Project, error)
@@ -54,12 +56,10 @@ type Service interface {
 	ResetProjectRatings(ctx context.Context, projectID int64) error
 	ListRatings(ctx context.Context) ([]dto.Rating, error)
 	GetRating(ctx context.Context, id int64) (dto.Rating, error)
-	GetRatingsByProjectID(ctx context.Context, projectID int64) ([]dto.Rating, error)
 	GetRatingsByUserID(ctx context.Context, userID int64) ([]dto.Rating, error)
 	CreateRating(ctx context.Context, userID int64, req dto.RatingCreate) (dto.Rating, error)
 	UpdateRating(ctx context.Context, id int64, userID int64, req dto.RatingUpdate) (dto.Rating, error)
 	DeleteRating(ctx context.Context, id int64, userID int64) error
-	DeleteAllRatingsByProjectID(ctx context.Context, projectID int64) error
 	HasUserRatedProject(ctx context.Context, userID int64, projectID int64) (bool, error)
 	SaveProjectPhoto(ctx context.Context, photoURL string, projectID int64) (dto.Photo, error)
 	SaveProfilePhoto(ctx context.Context, photoURL string) (dto.Photo, error)
@@ -78,6 +78,29 @@ type OAuthLoginStart struct {
 	Verifier string
 	Provider OAuthProvider
 }
+
+// DeviceLoginStart is the result of initiating an OAuth device-authorization flow.
+type DeviceLoginStart struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURI string
+	ExpiresIn       int
+	Interval        int
+}
+
+// DeviceAuthStatus reports where a polled device-flow login stands.
+type DeviceAuthStatus string
+
+const (
+	DeviceAuthPending  DeviceAuthStatus = "pending"
+	DeviceAuthSlowDown DeviceAuthStatus = "slow_down"
+	DeviceAuthComplete DeviceAuthStatus = "complete"
+)
+
+const (
+	githubDeviceCodeURL   = "https://github.com/login/device/code"
+	githubDeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+)
 
 type googleUserInfo struct {
 	ID            string `json:"id"`
@@ -157,7 +180,7 @@ func (s *service) Login(ctx context.Context, email, password string) (dto.LoginR
 	if err != nil {
 		return dto.LoginResponse{}, err
 	}
-	if !auth.VerifyPlaintextPassword(user.Pwd, password) {
+	if !auth.VerifyPassword(user.Pwd, password) {
 		return dto.LoginResponse{}, ErrUnauthorized
 	}
 
@@ -178,7 +201,12 @@ func (s *service) Register(ctx context.Context, req dto.RegisterRequest) error {
 		return ErrAlreadyExists
 	}
 
-	_, err = s.Q.CreateUser(ctx, req.Email, sql.NullString{String: req.Password, Valid: true}, req.Name, "LOCAL", sql.NullString{}, sql.NullString{}, false, sql.NullTime{})
+	hashed, err := auth.HashPassword(req.Password)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.Q.CreateUser(ctx, req.Email, sql.NullString{String: hashed, Valid: true}, req.Name, "LOCAL", sql.NullString{}, sql.NullString{}, false, sql.NullTime{})
 	return err
 }
 
@@ -236,6 +264,152 @@ func (s *service) OAuthLogin(ctx context.Context, provider OAuthProvider, code, 
 	}
 
 	return s.JWT.GenerateLoginResponse(updated)
+}
+
+// StartGitHubDeviceLogin begins a GitHub device-authorization flow. Device flow
+// only needs the client id (no secret), but we require the GitHub OAuth config to
+// be present so an unconfigured provider stays disabled. The GitHub OAuth App must
+// have "Device Flow" enabled in its settings.
+func (s *service) StartGitHubDeviceLogin(ctx context.Context) (DeviceLoginStart, error) {
+	if s.GitHubOAuth == nil {
+		return DeviceLoginStart{}, ErrBadRequest
+	}
+
+	form := url.Values{}
+	form.Set("client_id", s.GitHubOAuth.ClientID)
+	form.Set("scope", strings.Join(s.GitHubOAuth.Scopes, " "))
+
+	var body struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+		Error           string `json:"error"`
+		ErrorDesc       string `json:"error_description"`
+	}
+	if err := githubPostForm(ctx, githubDeviceCodeURL, form, &body); err != nil {
+		return DeviceLoginStart{}, err
+	}
+	if body.Error != "" || body.DeviceCode == "" {
+		return DeviceLoginStart{}, fmt.Errorf("%w: start GitHub device login: %s", ErrBadRequest, oauthErrText(body.Error, body.ErrorDesc))
+	}
+
+	interval := body.Interval
+	if interval <= 0 {
+		interval = 5
+	}
+	return DeviceLoginStart{
+		DeviceCode:      body.DeviceCode,
+		UserCode:        body.UserCode,
+		VerificationURI: body.VerificationURI,
+		ExpiresIn:       body.ExpiresIn,
+		Interval:        interval,
+	}, nil
+}
+
+// PollGitHubDeviceLogin exchanges a device code for an access token. While the
+// user has not yet authorized, it returns a pending/slow_down status and no error.
+// On success it upserts the user and returns a signed login response.
+func (s *service) PollGitHubDeviceLogin(ctx context.Context, deviceCode string) (dto.LoginResponse, DeviceAuthStatus, error) {
+	if s.GitHubOAuth == nil || strings.TrimSpace(deviceCode) == "" {
+		return dto.LoginResponse{}, "", ErrBadRequest
+	}
+
+	form := url.Values{}
+	form.Set("client_id", s.GitHubOAuth.ClientID)
+	form.Set("device_code", deviceCode)
+	form.Set("grant_type", githubDeviceGrantType)
+
+	var body struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		Scope       string `json:"scope"`
+		Error       string `json:"error"`
+		ErrorDesc   string `json:"error_description"`
+	}
+	if err := githubPostForm(ctx, s.GitHubOAuth.Endpoint.TokenURL, form, &body); err != nil {
+		return dto.LoginResponse{}, "", err
+	}
+
+	switch body.Error {
+	case "authorization_pending":
+		return dto.LoginResponse{}, DeviceAuthPending, nil
+	case "slow_down":
+		return dto.LoginResponse{}, DeviceAuthSlowDown, nil
+	case "":
+		// success path continues below
+	default:
+		// access_denied, expired_token, incorrect_device_code, etc.
+		return dto.LoginResponse{}, "", fmt.Errorf("%w: GitHub device login: %s", ErrBadRequest, oauthErrText(body.Error, body.ErrorDesc))
+	}
+	if body.AccessToken == "" {
+		return dto.LoginResponse{}, DeviceAuthPending, nil
+	}
+
+	token := &oauth2.Token{AccessToken: body.AccessToken, TokenType: body.TokenType}
+	email, displayName, avatarURL, providerID, emailVerified, err := s.oauthUserInfo(ctx, OAuthProviderGitHub, token)
+	if err != nil {
+		return dto.LoginResponse{}, "", fmt.Errorf("%w: fetch GitHub user profile: %v", ErrBadRequest, err)
+	}
+	if email == "" || providerID == "" {
+		return dto.LoginResponse{}, "", ErrBadRequest
+	}
+
+	user, err := s.upsertOAuthUser(ctx, string(OAuthProviderGitHub), providerID, email, displayName, avatarURL, emailVerified)
+	if err != nil {
+		return dto.LoginResponse{}, "", err
+	}
+	updated, err := s.Q.UpdateUserLogin(ctx, user.ID, sql.NullTime{Time: time.Now(), Valid: true})
+	if err != nil {
+		return dto.LoginResponse{}, "", err
+	}
+
+	resp, err := s.JWT.GenerateLoginResponse(updated)
+	if err != nil {
+		return dto.LoginResponse{}, "", err
+	}
+	return resp, DeviceAuthComplete, nil
+}
+
+// githubPostForm posts a form-encoded body to a GitHub OAuth endpoint and decodes
+// the JSON response into out. GitHub returns form-encoded bodies unless asked for
+// JSON via the Accept header.
+func githubPostForm(ctx context.Context, endpoint string, form url.Values, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%w: GitHub returned %s: %s", ErrBadRequest, resp.Status, strings.TrimSpace(string(snippet)))
+	}
+
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+}
+
+func oauthErrText(code, desc string) string {
+	code = strings.TrimSpace(code)
+	desc = strings.TrimSpace(desc)
+	switch {
+	case code == "" && desc == "":
+		return "unknown error"
+	case desc == "":
+		return code
+	case code == "":
+		return desc
+	default:
+		return code + ": " + desc
+	}
 }
 
 func (s *service) oauthConfig(provider OAuthProvider) *oauth2.Config {
@@ -509,7 +683,8 @@ func (s *service) GetProject(ctx context.Context, id int64) (dto.Project, error)
 }
 
 func (s *service) CreateProject(ctx context.Context, req dto.ProjectCreate) (dto.Project, error) {
-	project, err := s.Q.CreateProject(ctx, req.Name, req.Description, req.Featured)
+	project, err := s.Q.CreateProject(ctx, req.Name, req.Description, req.Featured,
+		nullableString(req.GithubLink), nullableString(req.Challenges), nullableString(req.WhatILearned))
 	if err != nil {
 		return dto.Project{}, err
 	}
@@ -540,8 +715,20 @@ func (s *service) UpdateProject(ctx context.Context, id int64, req dto.ProjectUp
 	if req.Featured != nil {
 		featured = *req.Featured
 	}
+	githubLink := existing.GithubLink
+	if req.GithubLink != nil {
+		githubLink = nullableString(req.GithubLink)
+	}
+	challenges := existing.Challenges
+	if req.Challenges != nil {
+		challenges = nullableString(req.Challenges)
+	}
+	whatILearned := existing.WhatILearned
+	if req.WhatILearned != nil {
+		whatILearned = nullableString(req.WhatILearned)
+	}
 
-	_, err = s.Q.UpdateProject(ctx, id, name, description, featured)
+	_, err = s.Q.UpdateProject(ctx, id, name, description, featured, githubLink, challenges, whatILearned)
 	if err != nil {
 		return dto.Project{}, err
 	}
@@ -554,12 +741,8 @@ func (s *service) UpdateProject(ctx context.Context, id int64, req dto.ProjectUp
 }
 
 func (s *service) DeleteProject(ctx context.Context, id int64) error {
-	exists, err := s.Q.ProjectExists(ctx, id)
-	if err != nil {
+	if err := s.requireProject(ctx, id); err != nil {
 		return err
-	}
-	if !exists {
-		return ErrNotFound
 	}
 	if err := s.Q.DeleteRatingsByProjectID(ctx, id); err != nil {
 		return err
@@ -568,10 +751,8 @@ func (s *service) DeleteProject(ctx context.Context, id int64) error {
 }
 
 func (s *service) GetProjectRatings(ctx context.Context, projectID int64) ([]dto.Rating, error) {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return nil, err
-	} else if !exists {
-		return nil, ErrNotFound
 	}
 	ratings, err := s.Q.ListRatingsByProjectID(ctx, projectID)
 	if err != nil {
@@ -581,10 +762,8 @@ func (s *service) GetProjectRatings(ctx context.Context, projectID int64) ([]dto
 }
 
 func (s *service) GetProjectAverageRating(ctx context.Context, projectID int64) (float64, error) {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return 0, err
-	} else if !exists {
-		return 0, ErrNotFound
 	}
 	averageRaw, err := s.Q.RatingAverageByProjectID(ctx, projectID)
 	if err != nil {
@@ -594,10 +773,8 @@ func (s *service) GetProjectAverageRating(ctx context.Context, projectID int64) 
 }
 
 func (s *service) GetProjectRatingCount(ctx context.Context, projectID int64) (int, error) {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return 0, err
-	} else if !exists {
-		return 0, ErrNotFound
 	}
 	count, err := s.Q.RatingCountByProjectID(ctx, projectID)
 	if err != nil {
@@ -607,10 +784,8 @@ func (s *service) GetProjectRatingCount(ctx context.Context, projectID int64) (i
 }
 
 func (s *service) GetProjectRatingDistribution(ctx context.Context, projectID int64) (map[int]int, error) {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return nil, err
-	} else if !exists {
-		return nil, ErrNotFound
 	}
 	rows, err := s.Q.RatingDistributionByProjectID(ctx, projectID)
 	if err != nil {
@@ -624,10 +799,8 @@ func (s *service) GetProjectRatingDistribution(ctx context.Context, projectID in
 }
 
 func (s *service) ResetProjectRatings(ctx context.Context, projectID int64) error {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return err
-	} else if !exists {
-		return ErrNotFound
 	}
 	return s.Q.DeleteRatingsByProjectID(ctx, projectID)
 }
@@ -651,19 +824,6 @@ func (s *service) GetRating(ctx context.Context, id int64) (dto.Rating, error) {
 	return s.ratingDTO(ctx, rating)
 }
 
-func (s *service) GetRatingsByProjectID(ctx context.Context, projectID int64) ([]dto.Rating, error) {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
-		return nil, err
-	} else if !exists {
-		return nil, ErrNotFound
-	}
-	ratings, err := s.Q.ListRatingsByProjectID(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return s.ratingsDTO(ctx, ratings)
-}
-
 func (s *service) GetRatingsByUserID(ctx context.Context, userID int64) ([]dto.Rating, error) {
 	ratings, err := s.Q.ListRatingsByUserID(ctx, userID)
 	if err != nil {
@@ -681,10 +841,8 @@ func (s *service) CreateRating(ctx context.Context, userID int64, req dto.Rating
 	} else if err != nil {
 		return dto.Rating{}, err
 	}
-	if exists, err := s.Q.ProjectExists(ctx, req.ProjectID); err != nil {
+	if err := s.requireProject(ctx, req.ProjectID); err != nil {
 		return dto.Rating{}, err
-	} else if !exists {
-		return dto.Rating{}, ErrNotFound
 	}
 	exists, err := s.Q.RatingExistsByUserProject(ctx, userID, req.ProjectID)
 	if err != nil {
@@ -754,15 +912,6 @@ func (s *service) DeleteRating(ctx context.Context, id int64, userID int64) erro
 	return nil
 }
 
-func (s *service) DeleteAllRatingsByProjectID(ctx context.Context, projectID int64) error {
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
-		return err
-	} else if !exists {
-		return ErrNotFound
-	}
-	return s.Q.DeleteRatingsByProjectID(ctx, projectID)
-}
-
 func (s *service) HasUserRatedProject(ctx context.Context, userID int64, projectID int64) (bool, error) {
 	return s.Q.HasUserRatedProject(ctx, userID, projectID)
 }
@@ -772,10 +921,8 @@ func (s *service) SaveProjectPhoto(ctx context.Context, photoURL string, project
 	if err != nil {
 		return dto.Photo{}, err
 	}
-	if exists, err := s.Q.ProjectExists(ctx, projectID); err != nil {
+	if err := s.requireProject(ctx, projectID); err != nil {
 		return dto.Photo{}, err
-	} else if !exists {
-		return dto.Photo{}, ErrNotFound
 	}
 	photo, err := s.Q.SaveProjectPhoto(ctx, normalized, sql.NullInt64{Int64: projectID, Valid: true})
 	if err != nil {
@@ -824,15 +971,7 @@ func (s *service) SubmitContact(ctx context.Context, req dto.Contact) (dto.Conta
 		_ = s.Emails.SendContactConfirmation(ctx, req.Name, req.Email)
 	}
 
-	return dto.ContactMessage{
-		ID:          message.ID,
-		Name:        message.Name,
-		Email:       message.Email,
-		Message:     message.Message,
-		SubmittedAt: message.SubmittedAt,
-		IsRead:      message.IsRead,
-		IsReplied:   message.IsReplied,
-	}, nil
+	return contactMessageDTO(message), nil
 }
 
 func (s *service) ListContactMessages(ctx context.Context) ([]dto.ContactMessage, error) {
@@ -859,15 +998,7 @@ func (s *service) MarkContactRead(ctx context.Context, id int64) (dto.ContactMes
 	if err != nil {
 		return dto.ContactMessage{}, err
 	}
-	return dto.ContactMessage{
-		ID:          message.ID,
-		Name:        message.Name,
-		Email:       message.Email,
-		Message:     message.Message,
-		SubmittedAt: message.SubmittedAt,
-		IsRead:      message.IsRead,
-		IsReplied:   message.IsReplied,
-	}, nil
+	return contactMessageDTO(message), nil
 }
 
 func (s *service) MarkContactReplied(ctx context.Context, id int64) (dto.ContactMessage, error) {
@@ -878,15 +1009,7 @@ func (s *service) MarkContactReplied(ctx context.Context, id int64) (dto.Contact
 	if err != nil {
 		return dto.ContactMessage{}, err
 	}
-	return dto.ContactMessage{
-		ID:          message.ID,
-		Name:        message.Name,
-		Email:       message.Email,
-		Message:     message.Message,
-		SubmittedAt: message.SubmittedAt,
-		IsRead:      message.IsRead,
-		IsReplied:   message.IsReplied,
-	}, nil
+	return contactMessageDTO(message), nil
 }
 
 func (s *service) DeleteContactMessage(ctx context.Context, id int64) error {
@@ -913,6 +1036,9 @@ func assembleProjectDTO(project db.Project, technologies []string, photos []db.P
 		Name:          project.Name,
 		Description:   project.Description,
 		Technologies:  technologies,
+		GithubLink:    dto.NullString(project.GithubLink),
+		Challenges:    dto.NullString(project.Challenges),
+		WhatILearned:  dto.NullString(project.WhatILearned),
 		Featured:      project.Featured,
 		CreatedAt:     project.CreatedAt,
 		UpdatedAt:     project.UpdatedAt,
@@ -939,13 +1065,32 @@ func toFloat64(v interface{}) float64 {
 }
 
 func (s *service) ratingsDTO(ctx context.Context, ratings []db.Rating) ([]dto.Rating, error) {
+	if len(ratings) == 0 {
+		return []dto.Rating{}, nil
+	}
+
+	userIDs := make([]int64, 0, len(ratings))
+	seen := make(map[int64]struct{}, len(ratings))
+	for _, rating := range ratings {
+		if _, ok := seen[rating.UserID]; ok {
+			continue
+		}
+		seen[rating.UserID] = struct{}{}
+		userIDs = append(userIDs, rating.UserID)
+	}
+
+	users, err := s.Q.GetUsersByIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[int64]string, len(users))
+	for _, user := range users {
+		names[user.ID] = user.Name
+	}
+
 	items := make([]dto.Rating, 0, len(ratings))
 	for _, rating := range ratings {
-		item, err := s.ratingDTO(ctx, rating)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
+		items = append(items, ratingToDTO(rating, names[rating.UserID]))
 	}
 	return items, nil
 }
@@ -955,32 +1100,51 @@ func (s *service) ratingDTO(ctx context.Context, rating db.Rating) (dto.Rating, 
 	if err != nil {
 		return dto.Rating{}, err
 	}
+	return ratingToDTO(rating, user.Name), nil
+}
+
+func ratingToDTO(rating db.Rating, userName string) dto.Rating {
 	return dto.Rating{
 		ID:        rating.ID,
 		UserID:    rating.UserID,
-		UserName:  user.Name,
+		UserName:  userName,
 		ProjectID: rating.ProjectID,
 		Rating:    int(rating.Rating),
 		Comment:   dto.NullString(rating.Comment),
 		CreatedAt: rating.CreatedAt,
 		UpdatedAt: rating.UpdatedAt,
-	}, nil
+	}
+}
+
+func contactMessageDTO(message db.ContactMessage) dto.ContactMessage {
+	return dto.ContactMessage{
+		ID:          message.ID,
+		Name:        message.Name,
+		Email:       message.Email,
+		Message:     message.Message,
+		SubmittedAt: message.SubmittedAt,
+		IsRead:      message.IsRead,
+		IsReplied:   message.IsReplied,
+	}
 }
 
 func contactMessagesDTO(messages []db.ContactMessage) []dto.ContactMessage {
 	items := make([]dto.ContactMessage, 0, len(messages))
 	for _, message := range messages {
-		items = append(items, dto.ContactMessage{
-			ID:          message.ID,
-			Name:        message.Name,
-			Email:       message.Email,
-			Message:     message.Message,
-			SubmittedAt: message.SubmittedAt,
-			IsRead:      message.IsRead,
-			IsReplied:   message.IsReplied,
-		})
+		items = append(items, contactMessageDTO(message))
 	}
 	return items
+}
+
+func (s *service) requireProject(ctx context.Context, projectID int64) error {
+	exists, err := s.Q.ProjectExists(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *service) replaceProjectTechnologies(ctx context.Context, projectID int64, technologies []string) error {

@@ -6,23 +6,24 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/gin-gonic/gin"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/auth"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
-
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/middleware"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
 )
 
 type API interface {
-	Routes(r chi.Router)
+	Routes(r *gin.RouterGroup)
 }
 
 type api struct {
 	svc              service.Service
 	jwt              *auth.JWT
 	oauthRedirectURI string
+	basePath         string
 }
 
 type oauthCookieConfig struct {
@@ -31,574 +32,564 @@ type oauthCookieConfig struct {
 	CallbackPath string
 }
 
-var oauthCookieConfigs = map[service.OAuthProvider]oauthCookieConfig{
-	service.OAuthProviderGoogle: {
-		StateName:    "oauth_google_state",
-		VerifierName: "oauth_google_pkce_verifier",
-		CallbackPath: "/portfolio/auth/google/callback",
-	},
-	service.OAuthProviderGitHub: {
-		StateName:    "oauth_github_state",
-		VerifierName: "oauth_github_pkce_verifier",
-		CallbackPath: "/portfolio/auth/github/callback",
-	},
+// oauthCookieNames holds the per-provider cookie names. The cookie Path is
+// derived from the router base path at request time (see cookieConfig) so it
+// always matches the actual versioned callback route.
+var oauthCookieNames = map[service.OAuthProvider]struct {
+	StateName    string
+	VerifierName string
+}{
+	service.OAuthProviderGoogle: {"oauth_google_state", "oauth_google_pkce_verifier"},
+	service.OAuthProviderGitHub: {"oauth_github_state", "oauth_github_pkce_verifier"},
 }
 
 const oauthCookieMaxAge = 10 * 60
 
-func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI string) API {
-	return &api{svc: svc, jwt: jwt, oauthRedirectURI: oauthRedirectURI}
+func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI, basePath string) API {
+	return &api{svc: svc, jwt: jwt, oauthRedirectURI: oauthRedirectURI, basePath: basePath}
 }
 
-func (h *api) Routes(r chi.Router) {
-	r.Post("/auth/login", h.Login)
-	r.Post("/auth/register", h.Register)
-	r.Get("/auth/google", h.OAuthLogin(service.OAuthProviderGoogle))
-	r.Get("/auth/google/callback", h.OAuthCallback(service.OAuthProviderGoogle))
-	r.Get("/auth/github", h.OAuthLogin(service.OAuthProviderGitHub))
-	r.Get("/auth/github/callback", h.OAuthCallback(service.OAuthProviderGitHub))
+func (h *api) Routes(r *gin.RouterGroup) {
+	r.POST("/auth/login", h.Login)
+	r.POST("/auth/register", h.Register)
+	r.GET("/auth/google", h.OAuthLogin(service.OAuthProviderGoogle))
+	r.GET("/auth/google/callback", h.OAuthCallback(service.OAuthProviderGoogle))
+	r.GET("/auth/github", h.OAuthLogin(service.OAuthProviderGitHub))
+	r.GET("/auth/github/callback", h.OAuthCallback(service.OAuthProviderGitHub))
+	r.POST("/auth/github/device", h.GitHubDeviceStart)
+	r.POST("/auth/github/device/token", h.GitHubDevicePoll)
 
-	r.Get("/projects", h.ListProjects)
-	r.Get("/projects/{id}", h.GetProject)
-	r.Post("/projects", h.CreateProject)
-	r.Put("/projects/{id}", h.UpdateProject)
-	r.Delete("/projects/{id}", h.DeleteProject)
-	r.Get("/projects/{id}/ratings", h.GetProjectRatings)
-	r.Get("/projects/{id}/ratings/average", h.GetProjectAverageRating)
-	r.Get("/projects/{id}/ratings/count", h.GetProjectRatingCount)
-	r.Get("/projects/{id}/ratings/distribution", h.GetProjectRatingDistribution)
-	r.Delete("/projects/{id}/ratings", h.ResetProjectRatings)
+	r.GET("/projects", h.ListProjects)
+	r.GET("/projects/:id", h.GetProject)
+	r.POST("/projects", h.CreateProject)
+	r.PUT("/projects/:id", h.UpdateProject)
+	r.DELETE("/projects/:id", h.DeleteProject)
+	r.GET("/projects/:id/ratings", h.GetProjectRatings)
+	r.GET("/projects/:id/ratings/average", h.GetAverageRating)
+	r.GET("/projects/:id/ratings/count", h.GetRatingCount)
+	r.GET("/projects/:id/ratings/distribution", h.GetRatingDistribution)
+	r.DELETE("/projects/:id/ratings", h.DeleteProjectRatings)
 
-	r.Get("/ratings", h.ListRatings)
-	r.Get("/ratings/{id}", h.GetRating)
-	r.Get("/ratings/project/{projectId}", h.GetRatingsByProject)
-	r.Get("/ratings/my-ratings", h.GetMyRatings)
-	r.Get("/ratings/project/{projectId}/distribution", h.GetRatingDistribution)
-	r.Get("/ratings/project/{projectId}/average", h.GetAverageRating)
-	r.Get("/ratings/project/{projectId}/count", h.GetRatingCount)
-	r.Get("/ratings/project/{projectId}/has-rated", h.HasUserRatedProject)
-	r.Post("/ratings", h.CreateRating)
-	r.Put("/ratings/{id}", h.UpdateRating)
-	r.Delete("/ratings/{id}", h.DeleteRating)
-	r.Delete("/ratings/project/{projectId}", h.DeleteAllRatingsForProject)
+	r.GET("/ratings", h.ListRatings)
+	r.GET("/ratings/:id", h.GetRating)
+	r.GET("/ratings/project/:projectId", h.GetProjectRatings)
+	r.GET("/ratings/project/:projectId/average", h.GetAverageRating)
+	r.GET("/ratings/project/:projectId/count", h.GetRatingCount)
+	r.GET("/ratings/project/:projectId/distribution", h.GetRatingDistribution)
+	r.DELETE("/ratings/project/:projectId", h.DeleteProjectRatings)
 
-	r.With(middleware.Auth(h.jwt)).Post("/photos/{projectId}", h.SaveProjectPhoto)
-	r.With(middleware.Auth(h.jwt)).Post("/photos/profile", h.SaveProfilePhoto)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Delete("/photos/{photoId}", h.DeletePhoto)
+	// Routes that identify the caller from their JWT must run behind Auth,
+	// otherwise the claims lookup returns nil and the handler panics.
+	authenticated := r.Group("")
+	authenticated.Use(middleware.Auth(h.jwt))
+	authenticated.GET("/ratings/my-ratings", h.GetMyRatings)
+	authenticated.GET("/ratings/project/:projectId/has-rated", h.HasUserRatedProject)
+	authenticated.POST("/ratings", h.CreateRating)
+	authenticated.PUT("/ratings/:id", h.UpdateRating)
+	authenticated.DELETE("/ratings/:id", h.DeleteRating)
+	authenticated.POST("/photos/:projectId", h.SaveProjectPhoto)
+	authenticated.POST("/photos/profile", h.SaveProfilePhoto)
 
-	r.Post("/contact", h.SubmitContact)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Get("/contact", h.ListContactMessages)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Get("/contact/unread", h.ListUnreadContactMessages)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Patch("/contact/{id}/read", h.MarkContactRead)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Patch("/contact/{id}/replied", h.MarkContactReplied)
-	r.With(middleware.Auth(h.jwt), middleware.Admin(h.jwt)).Delete("/contact/{id}", h.DeleteContactMessage)
+	admin := authenticated.Group("")
+	admin.Use(middleware.Admin(h.jwt))
+	admin.DELETE("/photos/:photoId", h.DeletePhoto)
 
-	r.Get("/cron", h.Cron)
+	r.POST("/contact", h.SubmitContact)
+	admin.GET("/contact", h.ListContactMessages)
+	admin.GET("/contact/unread", h.ListUnreadContactMessages)
+	admin.PATCH("/contact/:id/read", h.MarkContactRead)
+	admin.PATCH("/contact/:id/replied", h.MarkContactReplied)
+	admin.DELETE("/contact/:id", h.DeleteContactMessage)
+
+	r.GET("/cron", h.Cron)
 }
 
-func (h *api) Login(w http.ResponseWriter, r *http.Request) {
+func (h *api) Login(c *gin.Context) {
 	var req dto.LoginRequest
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	resp, err := h.svc.Login(r.Context(), req.Email, req.Password)
+	resp, err := h.svc.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, resp)
+	c.JSON(http.StatusOK, resp)
 }
 
-func (h *api) Register(w http.ResponseWriter, r *http.Request) {
+func (h *api) Register(c *gin.Context) {
 	var req dto.RegisterRequest
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	if err := h.svc.Register(r.Context(), req); err != nil {
-		writeError(w, err)
+	if err := h.svc.Register(c.Request.Context(), req); err != nil {
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, dto.MessageResponse{Message: "User created successfully"})
+	c.JSON(http.StatusCreated, dto.MessageResponse{Message: "User created successfully"})
 }
 
-func (h *api) OAuthLogin(provider service.OAuthProvider) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (h *api) OAuthLogin(provider service.OAuthProvider) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		start, err := h.svc.StartOAuthLogin(provider)
 		if err != nil {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", "OAuth2 is not configured")
+			redirectOAuth(c, h.oauthRedirectURI, "", "OAuth2 is not configured")
 			return
 		}
 
-		cookies := oauthCookieConfigFor(provider)
-		setOAuthCookie(w, cookies.StateName, start.State, cookies.CallbackPath)
-		setOAuthCookie(w, cookies.VerifierName, start.Verifier, cookies.CallbackPath)
-		http.Redirect(w, r, start.AuthURL, http.StatusTemporaryRedirect)
+		cookies := h.oauthCookieConfigFor(provider)
+		setOAuthCookie(c, cookies.StateName, start.State, cookies.CallbackPath)
+		setOAuthCookie(c, cookies.VerifierName, start.Verifier, cookies.CallbackPath)
+		c.Redirect(http.StatusTemporaryRedirect, start.AuthURL)
 	}
 }
 
-func (h *api) OAuthCallback(provider service.OAuthProvider) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		cookies := oauthCookieConfigFor(provider)
-		if errMsg := r.URL.Query().Get("error"); errMsg != "" {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", errMsg)
+func (h *api) OAuthCallback(provider service.OAuthProvider) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cookies := h.oauthCookieConfigFor(provider)
+		if errMsg := c.Query("error"); errMsg != "" {
+			redirectOAuth(c, h.oauthRedirectURI, "", errMsg)
 			return
 		}
 
-		stateCookie, err := r.Cookie(cookies.StateName)
+		stateCookie, err := c.Cookie(cookies.StateName)
 		if err != nil {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", "OAuth2 state is missing")
+			redirectOAuth(c, h.oauthRedirectURI, "", "OAuth2 state is missing")
 			return
 		}
-		verifierCookie, err := r.Cookie(cookies.VerifierName)
+		verifierCookie, err := c.Cookie(cookies.VerifierName)
 		if err != nil {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", "OAuth2 PKCE verifier is missing")
+			redirectOAuth(c, h.oauthRedirectURI, "", "OAuth2 PKCE verifier is missing")
 			return
 		}
 
-		state := r.URL.Query().Get("state")
-		code := r.URL.Query().Get("code")
-		if !secureEqual(stateCookie.Value, state) {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", "OAuth2 state mismatch")
+		state := c.Query("state")
+		code := c.Query("code")
+		if !secureEqual(stateCookie, state) {
+			redirectOAuth(c, h.oauthRedirectURI, "", "OAuth2 state mismatch")
 			return
 		}
 
-		resp, err := h.svc.OAuthLogin(r.Context(), provider, code, stateCookie.Value, verifierCookie.Value)
-		clearOAuthCookie(w, cookies.StateName, cookies.VerifierName, cookies.CallbackPath)
+		resp, err := h.svc.OAuthLogin(c.Request.Context(), provider, code, stateCookie, verifierCookie)
+		clearOAuthCookie(c, cookies.StateName, cookies.VerifierName, cookies.CallbackPath)
 		if err != nil {
-			redirectOAuth(w, r, h.oauthRedirectURI, "", "Authentication failed")
+			redirectOAuth(c, h.oauthRedirectURI, "", "Authentication failed")
 			return
 		}
 
-		redirectOAuth(w, r, h.oauthRedirectURI, resp.Token, "")
+		redirectOAuth(c, h.oauthRedirectURI, resp.Token, "")
 	}
 }
 
-func oauthCookieConfigFor(provider service.OAuthProvider) oauthCookieConfig {
-	if config, ok := oauthCookieConfigs[provider]; ok {
-		return config
-	}
-	return oauthCookieConfigs[service.OAuthProviderGoogle]
-}
-
-func (h *api) ListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.svc.ListProjects(r.Context())
+func (h *api) GitHubDeviceStart(c *gin.Context) {
+	start, err := h.svc.StartGitHubDeviceLogin(c.Request.Context())
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, projects)
+	c.JSON(http.StatusOK, dto.DeviceCodeResponse{
+		DeviceCode:      start.DeviceCode,
+		UserCode:        start.UserCode,
+		VerificationUri: start.VerificationURI,
+		ExpiresIn:       start.ExpiresIn,
+		Interval:        start.Interval,
+	})
 }
 
-func (h *api) GetProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) GitHubDevicePoll(c *gin.Context) {
+	var req dto.DevicePollRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	resp, status, err := h.svc.PollGitHubDeviceLogin(c.Request.Context(), req.DeviceCode)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if status == service.DeviceAuthComplete {
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	// Not authorized yet: 202 tells the client to keep polling.
+	c.JSON(http.StatusAccepted, dto.DeviceStatusResponse{Status: string(status)})
+}
+
+func (h *api) oauthCookieConfigFor(provider service.OAuthProvider) oauthCookieConfig {
+	names, ok := oauthCookieNames[provider]
+	if !ok {
+		provider = service.OAuthProviderGoogle
+		names = oauthCookieNames[provider]
+	}
+	return oauthCookieConfig{
+		StateName:    names.StateName,
+		VerifierName: names.VerifierName,
+		CallbackPath: h.basePath + "/auth/" + strings.ToLower(string(provider)) + "/callback",
+	}
+}
+
+func (h *api) ListProjects(c *gin.Context) {
+	projects, err := h.svc.ListProjects(c.Request.Context())
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, projects)
+}
+
+func (h *api) GetProject(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	project, err := h.svc.GetProject(r.Context(), id)
+	project, err := h.svc.GetProject(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, project)
+	c.JSON(http.StatusOK, project)
 }
 
-func (h *api) CreateProject(w http.ResponseWriter, r *http.Request) {
+func (h *api) CreateProject(c *gin.Context) {
 	var req dto.ProjectCreate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	project, err := h.svc.CreateProject(r.Context(), req)
+	project, err := h.svc.CreateProject(c.Request.Context(), req)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, project)
+	c.JSON(http.StatusCreated, project)
 }
 
-func (h *api) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) UpdateProject(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
 	var req dto.ProjectUpdate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	project, err := h.svc.UpdateProject(r.Context(), id, req)
+	project, err := h.svc.UpdateProject(c.Request.Context(), id, req)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, project)
+	c.JSON(http.StatusOK, project)
 }
 
-func (h *api) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) DeleteProject(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.svc.DeleteProject(r.Context(), id); err != nil {
-		writeError(w, err)
+	if err := h.svc.DeleteProject(c.Request.Context(), id); err != nil {
+		writeError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *api) GetProjectRatings(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+// GetProjectRatings serves both /projects/:id/ratings and /ratings/project/:projectId.
+func (h *api) GetProjectRatings(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
 	if !ok {
 		return
 	}
-	ratings, err := h.svc.GetProjectRatings(r.Context(), id)
+	ratings, err := h.svc.GetProjectRatings(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, ratings)
+	c.JSON(http.StatusOK, ratings)
 }
 
-func (h *api) GetProjectAverageRating(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) GetAverageRating(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
 	if !ok {
 		return
 	}
-	average, err := h.svc.GetProjectAverageRating(r.Context(), id)
+	average, err := h.svc.GetProjectAverageRating(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]float64{"averageRating": average})
+	c.JSON(http.StatusOK, gin.H{"averageRating": average})
 }
 
-func (h *api) GetProjectRatingCount(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) GetRatingCount(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
 	if !ok {
 		return
 	}
-	count, err := h.svc.GetProjectRatingCount(r.Context(), id)
+	count, err := h.svc.GetProjectRatingCount(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]int{"count": count})
+	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-func (h *api) GetProjectRatingDistribution(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) GetRatingDistribution(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
 	if !ok {
 		return
 	}
-	distribution, err := h.svc.GetProjectRatingDistribution(r.Context(), id)
+	distribution, err := h.svc.GetProjectRatingDistribution(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, distribution)
+	c.JSON(http.StatusOK, distribution)
 }
 
-func (h *api) ResetProjectRatings(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) DeleteProjectRatings(c *gin.Context) {
+	id, ok := parseID(c, "id", "projectId")
 	if !ok {
 		return
 	}
-	if err := h.svc.ResetProjectRatings(r.Context(), id); err != nil {
-		writeError(w, err)
+	if err := h.svc.ResetProjectRatings(c.Request.Context(), id); err != nil {
+		writeError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *api) ListRatings(w http.ResponseWriter, r *http.Request) {
-	ratings, err := h.svc.ListRatings(r.Context())
+func (h *api) ListRatings(c *gin.Context) {
+	ratings, err := h.svc.ListRatings(c.Request.Context())
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, ratings)
+	c.JSON(http.StatusOK, ratings)
 }
 
-func (h *api) GetRating(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) GetRating(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	rating, err := h.svc.GetRating(r.Context(), id)
+	rating, err := h.svc.GetRating(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, rating)
+	c.JSON(http.StatusOK, rating)
 }
 
-func (h *api) GetRatingsByProject(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
+func (h *api) GetMyRatings(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	ratings, err := h.svc.GetRatingsByUserID(c.Request.Context(), claims.UserID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ratings)
+}
+
+func (h *api) HasUserRatedProject(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	projectID, ok := parseID(c, "projectId")
 	if !ok {
 		return
 	}
-	ratings, err := h.svc.GetRatingsByProjectID(r.Context(), projectID)
+	hasRated, err := h.svc.HasUserRatedProject(c.Request.Context(), claims.UserID, projectID)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, ratings)
+	c.JSON(http.StatusOK, gin.H{"hasRated": hasRated})
 }
 
-func (h *api) GetMyRatings(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.ClaimsFromContext(r)
-	ratings, err := h.svc.GetRatingsByUserID(r.Context(), claims.UserID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, ratings)
-}
-
-func (h *api) GetRatingDistribution(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
-	if !ok {
-		return
-	}
-	distribution, err := h.svc.GetProjectRatingDistribution(r.Context(), projectID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, distribution)
-}
-
-func (h *api) GetAverageRating(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
-	if !ok {
-		return
-	}
-	average, err := h.svc.GetProjectAverageRating(r.Context(), projectID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]float64{"averageRating": average})
-}
-
-func (h *api) GetRatingCount(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
-	if !ok {
-		return
-	}
-	count, err := h.svc.GetProjectRatingCount(r.Context(), projectID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]int{"count": count})
-}
-
-func (h *api) HasUserRatedProject(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.ClaimsFromContext(r)
-	projectID, ok := writeID(w, r, "projectId")
-	if !ok {
-		return
-	}
-	hasRated, err := h.svc.HasUserRatedProject(r.Context(), claims.UserID, projectID)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	middleware.WriteJSON(w, http.StatusOK, map[string]bool{"hasRated": hasRated})
-}
-
-func (h *api) CreateRating(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.ClaimsFromContext(r)
+func (h *api) CreateRating(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
 	var req dto.RatingCreate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	rating, err := h.svc.CreateRating(r.Context(), claims.UserID, req)
+	rating, err := h.svc.CreateRating(c.Request.Context(), claims.UserID, req)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, rating)
+	c.JSON(http.StatusCreated, rating)
 }
 
-func (h *api) UpdateRating(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.ClaimsFromContext(r)
-	id, ok := writeID(w, r, "id")
+func (h *api) UpdateRating(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
 	var req dto.RatingUpdate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	rating, err := h.svc.UpdateRating(r.Context(), id, claims.UserID, req)
+	rating, err := h.svc.UpdateRating(c.Request.Context(), id, claims.UserID, req)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, rating)
+	c.JSON(http.StatusOK, rating)
 }
 
-func (h *api) DeleteRating(w http.ResponseWriter, r *http.Request) {
-	claims := middleware.ClaimsFromContext(r)
-	id, ok := writeID(w, r, "id")
+func (h *api) DeleteRating(c *gin.Context) {
+	claims := middleware.ClaimsFromContext(c)
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.svc.DeleteRating(r.Context(), id, claims.UserID); err != nil {
-		writeError(w, err)
+	if err := h.svc.DeleteRating(c.Request.Context(), id, claims.UserID); err != nil {
+		writeError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *api) DeleteAllRatingsForProject(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
-	if !ok {
-		return
-	}
-	if err := h.svc.DeleteAllRatingsByProjectID(r.Context(), projectID); err != nil {
-		writeError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *api) SaveProjectPhoto(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := writeID(w, r, "projectId")
+func (h *api) SaveProjectPhoto(c *gin.Context) {
+	projectID, ok := parseID(c, "projectId")
 	if !ok {
 		return
 	}
 	var req dto.PhotoCreate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	photo, err := h.svc.SaveProjectPhoto(r.Context(), req.PhotoURL, projectID)
+	photo, err := h.svc.SaveProjectPhoto(c.Request.Context(), req.PhotoURL, projectID)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, photo)
+	c.JSON(http.StatusCreated, photo)
 }
 
-func (h *api) SaveProfilePhoto(w http.ResponseWriter, r *http.Request) {
+func (h *api) SaveProfilePhoto(c *gin.Context) {
 	var req dto.PhotoCreate
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	photo, err := h.svc.SaveProfilePhoto(r.Context(), req.PhotoURL)
+	photo, err := h.svc.SaveProfilePhoto(c.Request.Context(), req.PhotoURL)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, photo)
+	c.JSON(http.StatusCreated, photo)
 }
 
-func (h *api) DeletePhoto(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "photoId")
+func (h *api) DeletePhoto(c *gin.Context) {
+	id, ok := parseID(c, "photoId")
 	if !ok {
 		return
 	}
-	if err := h.svc.DeletePhoto(r.Context(), id); err != nil {
-		writeError(w, err)
+	if err := h.svc.DeletePhoto(c.Request.Context(), id); err != nil {
+		writeError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *api) SubmitContact(w http.ResponseWriter, r *http.Request) {
+func (h *api) SubmitContact(c *gin.Context) {
 	var req dto.Contact
-	if err := middleware.DecodeJSON(r, &req); err != nil {
-		writeError(w, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	message, err := h.svc.SubmitContact(r.Context(), req)
+	message, err := h.svc.SubmitContact(c.Request.Context(), req)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusCreated, dto.ContactResponse{Success: true, Message: "Thank you for your message! I'll get back to you soon.", Data: &message})
+	c.JSON(http.StatusCreated, dto.ContactResponse{Success: true, Message: "Thank you for your message! I'll get back to you soon.", Data: &message})
 }
 
-func (h *api) ListContactMessages(w http.ResponseWriter, r *http.Request) {
-	messages, err := h.svc.ListContactMessages(r.Context())
+func (h *api) ListContactMessages(c *gin.Context) {
+	messages, err := h.svc.ListContactMessages(c.Request.Context())
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, messages)
+	c.JSON(http.StatusOK, messages)
 }
 
-func (h *api) ListUnreadContactMessages(w http.ResponseWriter, r *http.Request) {
-	messages, err := h.svc.ListUnreadContactMessages(r.Context())
+func (h *api) ListUnreadContactMessages(c *gin.Context) {
+	messages, err := h.svc.ListUnreadContactMessages(c.Request.Context())
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, messages)
+	c.JSON(http.StatusOK, messages)
 }
 
-func (h *api) MarkContactRead(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) MarkContactRead(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	message, err := h.svc.MarkContactRead(r.Context(), id)
+	message, err := h.svc.MarkContactRead(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, message)
+	c.JSON(http.StatusOK, message)
 }
 
-func (h *api) MarkContactReplied(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) MarkContactReplied(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	message, err := h.svc.MarkContactReplied(r.Context(), id)
+	message, err := h.svc.MarkContactReplied(c.Request.Context(), id)
 	if err != nil {
-		writeError(w, err)
+		writeError(c, err)
 		return
 	}
-	middleware.WriteJSON(w, http.StatusOK, message)
+	c.JSON(http.StatusOK, message)
 }
 
-func (h *api) DeleteContactMessage(w http.ResponseWriter, r *http.Request) {
-	id, ok := writeID(w, r, "id")
+func (h *api) DeleteContactMessage(c *gin.Context) {
+	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.svc.DeleteContactMessage(r.Context(), id); err != nil {
-		writeError(w, err)
+	if err := h.svc.DeleteContactMessage(c.Request.Context(), id); err != nil {
+		writeError(c, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
-func (h *api) Cron(w http.ResponseWriter, r *http.Request) {
-	_, _ = w.Write([]byte("Portfolio backend alive"))
+func (h *api) Cron(c *gin.Context) {
+	c.String(http.StatusOK, "Portfolio backend alive")
 }
 
-func writeID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
-	raw := chi.URLParam(r, name)
+// parseID reads the first of the given route params that is present and parses
+// it as a positive int64, writing a 400 response and returning false on failure.
+func parseID(c *gin.Context, names ...string) (int64, bool) {
+	raw := ""
+	for _, name := range names {
+		if value := c.Param(name); value != "" {
+			raw = value
+			break
+		}
+	}
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || id <= 0 {
-		middleware.WriteError(w, http.StatusBadRequest, "TYPE_MISMATCH", "Invalid ID")
+		middleware.WriteError(c, http.StatusBadRequest, "TYPE_MISMATCH", "Invalid ID")
 		return 0, false
 	}
 	return id, true
 }
 
-func setOAuthCookie(w http.ResponseWriter, name, value, path string) {
-	http.SetCookie(w, &http.Cookie{
+func bindJSON(c *gin.Context, dst any) bool {
+	if err := c.ShouldBindJSON(dst); err != nil {
+		middleware.WriteError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request body")
+		return false
+	}
+	return true
+}
+
+func setOAuthCookie(c *gin.Context, name, value, path string) {
+	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     path,
@@ -608,8 +599,8 @@ func setOAuthCookie(w http.ResponseWriter, name, value, path string) {
 	})
 }
 
-func clearOAuthCookie(w http.ResponseWriter, stateName, verifierName, path string) {
-	http.SetCookie(w, &http.Cookie{
+func clearOAuthCookie(c *gin.Context, stateName, verifierName, path string) {
+	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     stateName,
 		Value:    "",
 		Path:     path,
@@ -617,7 +608,7 @@ func clearOAuthCookie(w http.ResponseWriter, stateName, verifierName, path strin
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     verifierName,
 		Value:    "",
 		Path:     path,
@@ -631,10 +622,10 @@ func secureEqual(a, b string) bool {
 	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-func redirectOAuth(w http.ResponseWriter, r *http.Request, baseURL, token, errMsg string) {
+func redirectOAuth(c *gin.Context, baseURL, token, errMsg string) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		http.Error(w, "Invalid OAuth redirect URI", http.StatusInternalServerError)
+		c.String(http.StatusInternalServerError, "Invalid OAuth redirect URI")
 		return
 	}
 
@@ -648,22 +639,22 @@ func redirectOAuth(w http.ResponseWriter, r *http.Request, baseURL, token, errMs
 	}
 	parsed.RawQuery = query.Encode()
 
-	http.Redirect(w, r, parsed.String(), http.StatusTemporaryRedirect)
+	c.Redirect(http.StatusTemporaryRedirect, parsed.String())
 }
 
-func writeError(w http.ResponseWriter, err error) {
+func writeError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		middleware.WriteError(w, http.StatusNotFound, "RESOURCE_NOT_FOUND", "Resource not found")
+		middleware.WriteError(c, http.StatusNotFound, "RESOURCE_NOT_FOUND", "Resource not found")
 	case errors.Is(err, service.ErrUnauthorized):
-		middleware.WriteError(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Authentication failed")
+		middleware.WriteError(c, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Authentication failed")
 	case errors.Is(err, service.ErrForbidden):
-		middleware.WriteError(w, http.StatusForbidden, "ACCESS_DENIED", "Access denied")
+		middleware.WriteError(c, http.StatusForbidden, "ACCESS_DENIED", "Access denied")
 	case errors.Is(err, service.ErrConflict) || errors.Is(err, service.ErrAlreadyExists):
-		middleware.WriteError(w, http.StatusConflict, "RESOURCE_ALREADY_EXISTS", "Resource already exists")
+		middleware.WriteError(c, http.StatusConflict, "RESOURCE_ALREADY_EXISTS", "Resource already exists")
 	case errors.Is(err, service.ErrBadRequest):
-		middleware.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		middleware.WriteError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 	default:
-		middleware.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		middleware.WriteError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
 	}
 }

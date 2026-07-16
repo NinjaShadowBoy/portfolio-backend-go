@@ -1,40 +1,48 @@
 name: Deploy Backend
 
+# Builds a static binary, tests it, ships it to the VPS over SSH/rsync and
+# restarts the systemd service. Pushing to `main` deploys production; `staging`
+# deploys the staging instance. Per-environment secrets live in GitHub
+# Environments (production / staging).
 on:
   push:
-    branches: [deploy, staging]
+    branches: [main, staging]
     paths:
       - "cmd/**"
       - "internal/**"
       - "db/**"
       - "go.mod"
       - "go.sum"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
 
-env:
-  GO_VERSION: "1.22"
+# Never let two deploys of the same branch overlap on the box.
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: Test & build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # go-version-file keeps CI in lockstep with go.mod (currently 1.26) so the
+      # build can't silently use an older toolchain.
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
+          cache: true
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
+      - name: Vet
+        run: go vet ./...
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Test
+        run: go test ./...
 
       - name: Build binary
-        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
+        run: CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -44,10 +52,10 @@ jobs:
           retention-days: 3
 
   deploy:
+    name: Deploy to VPS
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -57,37 +65,80 @@ jobs:
           name: backend-binary
           path: bin/
 
+      - name: Resolve deployment variables
+        id: vars
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "env=production" >> "$GITHUB_OUTPUT"
+            echo "port=8080"      >> "$GITHUB_OUTPUT"
+          else
+            echo "env=staging"    >> "$GITHUB_OUTPUT"
+            echo "port=8081"      >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Make binary executable
         run: chmod +x bin/portfolio-backend
 
-      - name: Set deployment variables
-        id: vars
-        run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "ENV=production" >> $GITHUB_OUTPUT
-            echo "PORT=8080" >> $GITHUB_OUTPUT
-          else
-            echo "ENV=staging" >> $GITHUB_OUTPUT
-            echo "PORT=8081" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Deploy to VPS
+      # Ship the binary and migrations. --exclude '.env' protects the server-side
+      # secrets file from --delete; migrations are applied by the app on startup.
+      - name: Sync artifacts to VPS
         uses: burnett01/rsync-deployments@7.0.1
         with:
-          switches: -avzr --delete
+          switches: -avzr --delete --exclude='.env'
           path: bin/portfolio-backend db/
-          remote_path: ${{ vars.APP_PATH }}/${{ steps.vars.outputs.ENV }}/
+          remote_path: ${{ vars.APP_PATH }}/${{ steps.vars.outputs.env }}/
           remote_host: ${{ secrets.VPS_HOST }}
           remote_user: ${{ secrets.VPS_USER }}
           remote_key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Restart backend service
+      # Render the environment file from an environment-scoped secret. The quoted
+      # heredoc prevents the shell from expanding anything inside the secret.
+      - name: Write environment file
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_ENV: ${{ steps.vars.outputs.env }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DEPLOY_ENV
           script: |
-            sudo systemctl restart portfolio-backend-${{ steps.vars.outputs.ENV }}
-            sleep 2
-            sudo systemctl is-active portfolio-backend-${{ steps.vars.outputs.ENV }}
+            set -euo pipefail
+            target="${{ vars.APP_PATH }}/$DEPLOY_ENV"
+            install -d -m 700 "$target"
+            umask 077
+            cat > "$target/.env" <<'ENVFILE'
+            ${{ secrets.BACKEND_ENV }}
+            ENVFILE
+            chmod 600 "$target/.env"
+
+      # Restart the service and confirm it is actually serving before we call the
+      # deploy green. The cron route returns 200 with no auth.
+      - name: Restart & health check
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_ENV: ${{ steps.vars.outputs.env }}
+          PORT: ${{ steps.vars.outputs.port }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DEPLOY_ENV,PORT
+          script: |
+            set -euo pipefail
+            svc="portfolio-backend-$DEPLOY_ENV"
+            sudo systemctl restart "$svc"
+
+            # Poll the health endpoint for up to ~30s.
+            for i in $(seq 1 15); do
+              if curl -fsS "http://127.0.0.1:$PORT/portfolio/v1/cron" >/dev/null; then
+                echo "healthy after ${i}x2s"
+                sudo systemctl is-active "$svc"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "::error::$svc failed health check on port $PORT"
+            sudo systemctl status "$svc" --no-pager -l | tail -n 40 || true
+            exit 1

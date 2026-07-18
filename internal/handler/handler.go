@@ -90,6 +90,11 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	r.GET("/projects/:id/comments", h.ListProjectComments)
 	r.GET("/comments/project/:projectId", h.ListProjectComments)
 
+	// Article feedback is read by slug (a string), so these routes must not use
+	// parseID. Two URLs mirror the dual-URL project comment convention above.
+	r.GET("/articles/:slug/comments", h.ListArticleComments)
+	r.GET("/comments/article/:slug", h.ListArticleComments)
+
 	// Public participation: rating and commenting need no login. EnsureIdentity
 	// resolves a real user from their JWT or auto-provisions an anonymous one,
 	// setting the anon_token cookie so the identity persists across visits.
@@ -537,6 +542,19 @@ func (h *api) ListProjectComments(c *gin.Context) {
 		return
 	}
 	comments, err := h.svc.ListProjectComments(c.Request.Context(), id)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, comments)
+}
+
+// ListArticleComments serves both /articles/:slug/comments and
+// /comments/article/:slug. The slug is a free-form string, so it is read
+// directly from the route param rather than through parseID (int64-only).
+func (h *api) ListArticleComments(c *gin.Context) {
+	slug := c.Param("slug")
+	comments, err := h.svc.ListArticleComments(c.Request.Context(), slug)
 	if err != nil {
 		writeError(c, err)
 		return

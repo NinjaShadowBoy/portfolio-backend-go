@@ -115,19 +115,23 @@ type RatingUpdate struct {
 }
 
 type Comment struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userId"`
-	UserName  string    `json:"userName"`
-	UserImage *string   `json:"userImage"`
-	ProjectID int64     `json:"projectId"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"userId"`
+	UserName    string    `json:"userName"`
+	UserImage   *string   `json:"userImage"`
+	ProjectID   *int64    `json:"projectId"`
+	ArticleSlug *string   `json:"articleSlug"`
+	Type        string    `json:"type"`
+	Body        string    `json:"body"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type CommentCreate struct {
-	ProjectID int64  `json:"projectId"`
-	Body      string `json:"body"`
+	ProjectID   *int64  `json:"projectId"`
+	ArticleSlug *string `json:"articleSlug"`
+	Type        string  `json:"type"`
+	Body        string  `json:"body"`
 }
 
 type CommentUpdate struct {

@@ -12,13 +12,19 @@ import (
 )
 
 const createComment = `-- name: CreateComment :one
-INSERT INTO comments (body, user_id, project_id)
-VALUES ($1, $2, $3)
-RETURNING id, body, user_id, project_id, created_at, updated_at
+INSERT INTO comments (body, user_id, project_id, article_slug, type)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, body, user_id, project_id, created_at, updated_at, type, article_slug
 `
 
-func (q *Queries) CreateComment(ctx context.Context, body string, userID int64, projectID int64) (Comment, error) {
-	row := q.db.QueryRowContext(ctx, createComment, body, userID, projectID)
+func (q *Queries) CreateComment(ctx context.Context, body string, userID int64, projectID sql.NullInt64, articleSlug sql.NullString, type_ string) (Comment, error) {
+	row := q.db.QueryRowContext(ctx, createComment,
+		body,
+		userID,
+		projectID,
+		articleSlug,
+		type_,
+	)
 	var i Comment
 	err := row.Scan(
 		&i.ID,
@@ -27,6 +33,8 @@ func (q *Queries) CreateComment(ctx context.Context, body string, userID int64, 
 		&i.ProjectID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Type,
+		&i.ArticleSlug,
 	)
 	return i, err
 }
@@ -45,7 +53,7 @@ func (q *Queries) DeleteComment(ctx context.Context, iD int64, userID int64) (in
 }
 
 const getComment = `-- name: GetComment :one
-SELECT id, body, user_id, project_id, created_at, updated_at
+SELECT id, body, user_id, project_id, created_at, updated_at, type, article_slug
 FROM comments
 WHERE id = $1
 LIMIT 1
@@ -61,12 +69,72 @@ func (q *Queries) GetComment(ctx context.Context, id int64) (Comment, error) {
 		&i.ProjectID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Type,
+		&i.ArticleSlug,
 	)
 	return i, err
 }
 
+const listCommentsByArticleSlug = `-- name: ListCommentsByArticleSlug :many
+SELECT c.id, c.body, c.user_id, c.project_id, c.article_slug, c.type,
+       c.created_at, c.updated_at,
+       u.name AS user_name, u.image_url AS user_image
+FROM comments c
+JOIN users u ON u.id = c.user_id
+WHERE c.article_slug = $1
+ORDER BY c.created_at DESC, c.id DESC
+`
+
+type ListCommentsByArticleSlugRow struct {
+	ID          int64          `json:"id"`
+	Body        string         `json:"body"`
+	UserID      int64          `json:"userId"`
+	ProjectID   sql.NullInt64  `json:"projectId"`
+	ArticleSlug sql.NullString `json:"articleSlug"`
+	Type        string         `json:"type"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+	UserName    string         `json:"userName"`
+	UserImage   sql.NullString `json:"userImage"`
+}
+
+func (q *Queries) ListCommentsByArticleSlug(ctx context.Context, articleSlug sql.NullString) ([]ListCommentsByArticleSlugRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCommentsByArticleSlug, articleSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentsByArticleSlugRow
+	for rows.Next() {
+		var i ListCommentsByArticleSlugRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Body,
+			&i.UserID,
+			&i.ProjectID,
+			&i.ArticleSlug,
+			&i.Type,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UserName,
+			&i.UserImage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCommentsByProjectID = `-- name: ListCommentsByProjectID :many
-SELECT c.id, c.body, c.user_id, c.project_id, c.created_at, c.updated_at,
+SELECT c.id, c.body, c.user_id, c.project_id, c.article_slug, c.type,
+       c.created_at, c.updated_at,
        u.name AS user_name, u.image_url AS user_image
 FROM comments c
 JOIN users u ON u.id = c.user_id
@@ -75,17 +143,19 @@ ORDER BY c.created_at DESC, c.id DESC
 `
 
 type ListCommentsByProjectIDRow struct {
-	ID        int64          `json:"id"`
-	Body      string         `json:"body"`
-	UserID    int64          `json:"userId"`
-	ProjectID int64          `json:"projectId"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	UserName  string         `json:"userName"`
-	UserImage sql.NullString `json:"userImage"`
+	ID          int64          `json:"id"`
+	Body        string         `json:"body"`
+	UserID      int64          `json:"userId"`
+	ProjectID   sql.NullInt64  `json:"projectId"`
+	ArticleSlug sql.NullString `json:"articleSlug"`
+	Type        string         `json:"type"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+	UserName    string         `json:"userName"`
+	UserImage   sql.NullString `json:"userImage"`
 }
 
-func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID int64) ([]ListCommentsByProjectIDRow, error) {
+func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID sql.NullInt64) ([]ListCommentsByProjectIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCommentsByProjectID, projectID)
 	if err != nil {
 		return nil, err
@@ -99,6 +169,8 @@ func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID int64) 
 			&i.Body,
 			&i.UserID,
 			&i.ProjectID,
+			&i.ArticleSlug,
+			&i.Type,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UserName,
@@ -118,7 +190,7 @@ func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID int64) 
 }
 
 const listCommentsByUserID = `-- name: ListCommentsByUserID :many
-SELECT id, body, user_id, project_id, created_at, updated_at
+SELECT id, body, user_id, project_id, created_at, updated_at, type, article_slug
 FROM comments
 WHERE user_id = $1
 ORDER BY created_at DESC, id DESC
@@ -140,6 +212,8 @@ func (q *Queries) ListCommentsByUserID(ctx context.Context, userID int64) ([]Com
 			&i.ProjectID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Type,
+			&i.ArticleSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -171,7 +245,7 @@ UPDATE comments
 SET body = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND user_id = $2
-RETURNING id, body, user_id, project_id, created_at, updated_at
+RETURNING id, body, user_id, project_id, created_at, updated_at, type, article_slug
 `
 
 func (q *Queries) UpdateComment(ctx context.Context, iD int64, userID int64, body string) (Comment, error) {
@@ -184,6 +258,8 @@ func (q *Queries) UpdateComment(ctx context.Context, iD int64, userID int64, bod
 		&i.ProjectID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Type,
+		&i.ArticleSlug,
 	)
 	return i, err
 }

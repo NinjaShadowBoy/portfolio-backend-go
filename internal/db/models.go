@@ -16,12 +16,14 @@ type AnonToken struct {
 }
 
 type Comment struct {
-	ID        int64     `json:"id"`
-	Body      string    `json:"body"`
-	UserID    int64     `json:"userId"`
-	ProjectID int64     `json:"projectId"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          int64          `json:"id"`
+	Body        string         `json:"body"`
+	UserID      int64          `json:"userId"`
+	ProjectID   sql.NullInt64  `json:"projectId"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+	Type        string         `json:"type"`
+	ArticleSlug sql.NullString `json:"articleSlug"`
 }
 
 type ContactMessage struct {

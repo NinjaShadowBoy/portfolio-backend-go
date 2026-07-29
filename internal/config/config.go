@@ -59,7 +59,7 @@ func Load() (Config, error) {
 	origins := splitCSV(env("CORS_ALLOWED_ORIGINS", "http://localhost:*"))
 
 	cfg := Config{
-		Port:               env("PORT", "8080"),
+		Port:               env("PORT", "8081"),
 		DBURL:              env("DB_URL", "postgres://postgres:123456789@localhost:5432/portfolio?sslmode=disable"),
 		MigrationsPath:     env("MIGRATIONS_PATH", "db/migrations"),
 		SeedsPath:          env("SEEDS_PATH", "db/seeds"),
@@ -67,7 +67,7 @@ func Load() (Config, error) {
 		JWTSecret:          env("JWT_SECRET", "404E635266556A586E3072357538782F413F4428472B4B6250645367566B5970"),
 		JWTExpiration:      time.Duration(expirationMS) * time.Millisecond,
 		JWTIssuer:          env("JWT_ISSUER", "NinjaShadowBoy-PortfolioApp"),
-		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8080"+BasePath()),
+		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8081"+BasePath()),
 		OAuthRedirectURI:   env("OAUTH2_REDIRECT_URI", "http://localhost:4200/oauth2/redirect"),
 		GoogleClientID:     env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),

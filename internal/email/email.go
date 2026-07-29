@@ -65,7 +65,7 @@ func (s SMTPSender) SendContactConfirmation(_ context.Context, name, email strin
 Thank you for reaching out! I've received your message and will get back to you as soon as possible.
 
 Best regards,
-NinjaShadowBoy
+Alex Nelson
 
 ---
 This is an automated confirmation email.

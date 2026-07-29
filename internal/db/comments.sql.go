@@ -138,7 +138,7 @@ SELECT c.id, c.body, c.user_id, c.project_id, c.article_slug, c.type,
        u.name AS user_name, u.image_url AS user_image
 FROM comments c
 JOIN users u ON u.id = c.user_id
-WHERE c.project_id = $1
+WHERE c.project_id = $1::bigint
 ORDER BY c.created_at DESC, c.id DESC
 `
 
@@ -155,7 +155,7 @@ type ListCommentsByProjectIDRow struct {
 	UserImage   sql.NullString `json:"userImage"`
 }
 
-func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID sql.NullInt64) ([]ListCommentsByProjectIDRow, error) {
+func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID int64) ([]ListCommentsByProjectIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCommentsByProjectID, projectID)
 	if err != nil {
 		return nil, err

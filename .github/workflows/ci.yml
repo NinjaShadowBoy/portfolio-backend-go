@@ -1,0 +1,56 @@
+name: CI
+
+# Gate for pull requests and for pushes to branches that do NOT deploy.
+# deploy.yml re-runs vet/test before it ships, so main/staging pushes are
+# covered there rather than being built twice.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main, staging]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Vet, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # go-version-file keeps CI in lockstep with go.mod so the build cannot
+      # silently fall back to an older toolchain.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      # Same flags as the Dockerfile, via the Makefile as single source of truth.
+      - name: Build
+        run: make build
+
+  image:
+    name: Build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only - never push from CI. This catches a broken Dockerfile on the
+      # PR instead of at deploy time. Cached to GitHub Actions cache so the
+      # deploy build afterwards is mostly layer hits.
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

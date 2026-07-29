@@ -217,6 +217,25 @@ func FromUser(user db.User) User {
 	}
 }
 
+// FromComment maps a persisted comment plus its author's display fields to the
+// wire DTO. Exactly one of projectId / articleSlug is populated (the DB CHECK
+// enforces the XOR) — the polymorphic-target contract the frontend
+// CommentService is coded against.
+func FromComment(comment db.Comment, userName string, userImage sql.NullString) Comment {
+	return Comment{
+		ID:          comment.ID,
+		UserID:      comment.UserID,
+		UserName:    userName,
+		UserImage:   NullString(userImage),
+		ProjectID:   NullInt64(comment.ProjectID),
+		ArticleSlug: NullString(comment.ArticleSlug),
+		Type:        comment.Type,
+		Body:        comment.Body,
+		CreatedAt:   comment.CreatedAt,
+		UpdatedAt:   comment.UpdatedAt,
+	}
+}
+
 func Ptr[T any](value T) *T {
 	return &value
 }
@@ -226,6 +245,13 @@ func NullString(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+func NullInt64(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Int64
 }
 
 func PtrString(value *string) string {

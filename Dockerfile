@@ -14,5 +14,5 @@ WORKDIR /app
 COPY --from=builder /out/portfolio-backend /app/portfolio-backend
 COPY db /app/db
 USER app
-EXPOSE 8080
+EXPOSE 8081
 ENTRYPOINT ["/app/portfolio-backend"]

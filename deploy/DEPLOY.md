@@ -1,9 +1,12 @@
 # VPS deployment & operations
 
-The GitHub Actions workflow (`.github/workflows/deploy.yml`) builds a binary,
-ships it to the VPS, writes the `.env`, and restarts the service. This document
-covers the one-time server setup, **where the `.env` lives**, and **how to read
-logs**.
+Deploys are containerised. `.github/workflows/deploy.yml` builds an image, pushes
+it to GHCR, copies `deploy/docker-compose.yml` to the box, writes the `.env`, and
+rolls the stack with `docker compose up -d --wait`. Pushing to `main` deploys
+production; `staging` deploys the staging instance.
+
+This document covers the one-time server setup, **where the `.env` lives**, and
+**how to read logs**.
 
 ## Layout on the VPS
 
@@ -13,38 +16,61 @@ environment:
 ```
 /opt/portfolio/
 ├── production/
-│   ├── portfolio-backend      # binary (rsynced by CI)
-│   ├── db/                     # migrations (rsynced by CI, applied on startup)
-│   └── .env                    # <-- environment file (see below)
+│   ├── docker-compose.yml   # copied by CI from deploy/
+│   └── .env                 # <-- environment file (see below)
 └── staging/
-    ├── portfolio-backend
-    ├── db/
+    ├── docker-compose.yml
     └── .env
 ```
 
 `APP_PATH` must match the GitHub Actions **variable** `APP_PATH`.
 
+Database data lives in a Docker named volume (`db-portfolio`), not in this tree — so
+`rm -rf /opt/portfolio` does not delete the database, and neither does a deploy.
+
+## The stack
+
+Two containers per environment, defined in `deploy/docker-compose.yml`:
+
+| Service | Image | Exposed |
+| --- | --- | --- |
+| `db` | `postgres:18-alpine` | nothing — only reachable from `api` over the compose network |
+| `api` | `ghcr.io/<owner>/portfolio-backend-go:<sha>` | `127.0.0.1:${API_PORT}` |
+
+The API port is published on loopback only; host nginx terminates TLS and proxies
+to it. `api` waits for `db` to pass its healthcheck before starting, because the
+app applies migrations on boot and must not race Postgres.
+
+Migrations ship **inside the image** (`COPY db`) and run on startup, so schema and
+code can never arrive out of step.
+
 ## Where the `.env` file goes
 
-**`/opt/portfolio/<env>/.env`** -  e.g. `/opt/portfolio/production/.env`.
+**`/opt/portfolio/<env>/.env`** — e.g. `/opt/portfolio/production/.env`.
 
-The app reads `.env` from its working directory, which the systemd unit sets to
-that folder. `PORT` in this file is the single source of truth for the bound
-port -  the deploy's health check reads it back from here rather than hardcoding
-it.
+It serves two consumers at once: `env_file:` hands it to the app as its runtime
+environment, and Compose reads it for interpolation (`API_IMAGE`, `API_PORT`,
+`POSTGRES_*`).
 
-You have two ways to manage it:
-
-- **Via CI (recommended):** put the full file contents in the environment-scoped
+- **Via CI (recommended):** put the app's variables in the environment-scoped
   secret `BACKEND_ENV` (Settings → Environments → production / staging). Every
-  deploy rewrites `/opt/portfolio/<env>/.env` from it (mode `600`). The
-  `rsync --delete` step excludes `.env`, so it is never wiped.
-- **By hand:** edit `/opt/portfolio/<env>/.env` directly. Do this only if you are
-  *not* setting `BACKEND_ENV`, otherwise the next deploy overwrites your edits.
+  deploy rewrites the file from it, then appends the deploy-specific values
+  (`API_IMAGE` pinned to the SHA just built, `DEPLOY_ENV`).
+- **By hand:** edit it directly. Do this only if you are *not* setting
+  `BACKEND_ENV`, otherwise the next deploy overwrites your edits.
 
-Use `.env.example` (repo root) as the template. At minimum set `DB_URL`,
-`JWT_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, and
-`OAUTH_BASE_URL` / `OAUTH2_REDIRECT_URI` (see `OAUTH_SETUP.md`).
+Use `.env.example` (repo root) as the template. On top of what the app needs, the
+compose file requires:
+
+```bash
+POSTGRES_USER=portfolio
+POSTGRES_PASSWORD=<generate one>
+POSTGRES_DB=portfolio
+API_PORT=8081          # host-side loopback port; 8082 for staging
+```
+
+`DB_URL` is **overridden** by the compose file to point at the `db` service, so
+whatever value `.env` carries for local dev is ignored in the container.
 
 ## One-time setup
 
@@ -54,68 +80,74 @@ git clone <repo> && cd portfolio-backend-go/deploy
 APP_PATH=/opt/portfolio ./bootstrap.sh
 ```
 
-This creates the `portfolio` service user, the directories, placeholder `.env`
-files, and installs + enables the `portfolio-backend@.service` systemd unit for
-both environments. It does not start the service -  the first CI deploy ships the
-binary, after which:
+This installs Docker if missing, adds the deploy user to the `docker` group, and
+creates the per-environment directories. It installs no systemd unit — compose's
+`restart: unless-stopped` brings the containers back after a reboot.
 
-```bash
-sudo systemctl start portfolio-backend@production
-```
+Then, in the repo settings:
 
-### Let the deploy user restart without a password
+- **Variables:** `APP_PATH` = `/opt/portfolio`
+- **Secrets:** `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+- **Environments** `production` and `staging`, each with a `BACKEND_ENV` secret
 
-The workflow runs `sudo systemctl restart|status` over SSH, so the deploy SSH
-user (`VPS_USER`) needs passwordless sudo for exactly those commands. Create
-`/etc/sudoers.d/portfolio-deploy` (via `visudo -f`):
+No GHCR token is needed on the box: each deploy lends it the job-scoped
+`GITHUB_TOKEN` over stdin and logs out again when the run ends.
 
-```
-deployuser ALL=(root) NOPASSWD: /bin/systemctl restart portfolio-backend@*, \
-                                 /bin/systemctl status portfolio-backend@*, \
-                                 /bin/systemctl is-active portfolio-backend@*
-```
+### nginx
 
-(adjust `deployuser` and the `systemctl` path -  `which systemctl`, often
-`/usr/bin/systemctl`).
+Proxy the public domain to the loopback port, then `certbot --nginx`. The
+container is never reachable from the internet directly.
 
 ## Collecting logs
 
-All output goes to **journald** (tagged `portfolio-backend-<env>`), so `journalctl`
-is the single place to look -  no log files to rotate.
+Container stdout/stderr, capped at 3×10MB per service by the compose `logging`
+block, so nothing here can fill the disk.
 
 ```bash
-# Follow live (production)
-journalctl -u portfolio-backend@production -f
+cd /opt/portfolio/production
+
+# Follow live
+docker compose logs -f api
 
 # Last 200 lines
-journalctl -u portfolio-backend@production -n 200 --no-pager
+docker compose logs --tail=200 api
 
-# Since a time / today, errors only
-journalctl -u portfolio-backend@production --since "1 hour ago"
-journalctl -u portfolio-backend@production --since today -p err
+# Since a time
+docker compose logs --since 1h api
+docker compose logs --since 2026-07-16T09:00:00 --until 2026-07-16T10:00:00 api > /tmp/portfolio.log
 
-# Staging
-journalctl -u portfolio-backend@staging -f
-
-# Export a window to a file to share
-journalctl -u portfolio-backend@production --since "2026-07-16 09:00" \
-  --until "2026-07-16 10:00" --no-pager > /tmp/portfolio.log
+# The database
+docker compose logs -f db
 ```
 
-Handy shell aliases (add to `~/.bashrc`):
+Status at a glance:
 
 ```bash
-alias plogs='journalctl -u portfolio-backend@production -f'
-alias slogs='journalctl -u portfolio-backend@staging -f'
+cd /opt/portfolio/production
+docker compose ps                       # includes each container's health state
+curl -fsS http://127.0.0.1:8081/portfolio/v1/cron   # the same probe the deploy waits on
 ```
 
-Service health at a glance:
+## Rollback
+
+Images are tagged with the commit SHA, so rolling back is repointing `API_IMAGE`:
 
 ```bash
-systemctl status portfolio-backend@production
-# Same probe the deploy runs; $PORT is whatever PORT is set to in that env's .env.
-curl -fsS "http://127.0.0.1:$(grep -oE '^PORT=[0-9]+' /opt/portfolio/production/.env | grep -oE '[0-9]+')/portfolio/v1/cron"
+cd /opt/portfolio/production
+sudo sed -i "s|^API_IMAGE=.*|API_IMAGE=ghcr.io/<owner>/portfolio-backend-go:<previous-sha>|" .env
+docker compose up -d --wait
 ```
 
-> journald keeps logs in a ring buffer capped by disk. To retain more, set
-> `Storage=persistent` and a `SystemMaxUse=` in `/etc/systemd/journal.conf`.
+Find previous SHAs under **Packages** on the repo, or in the Actions history.
+
+Note this rolls back the **code**, not the **schema** — migrations already ran and
+are not reversed automatically. Additive migrations roll back cleanly; a
+destructive one needs a database restore.
+
+## Manual deploy
+
+```bash
+cd /opt/portfolio/production
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <you> --password-stdin
+docker compose pull && docker compose up -d --wait
+```

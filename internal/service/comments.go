@@ -72,24 +72,22 @@ func (s *service) CreateComment(ctx context.Context, userID int64, req dto.Comme
 }
 
 func (s *service) ListProjectComments(ctx context.Context, projectID int64) ([]dto.Comment, error) {
-	rows, err := s.Q.ListCommentsByProjectID(ctx, sql.NullInt64{Int64: projectID, Valid: true})
+	rows, err := s.Q.ListCommentsByProjectID(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	comments := make([]dto.Comment, 0, len(rows))
 	for _, row := range rows {
-		comments = append(comments, dto.Comment{
+		comments = append(comments, dto.FromComment(db.Comment{
 			ID:          row.ID,
-			UserID:      row.UserID,
-			UserName:    row.UserName,
-			UserImage:   dto.NullString(row.UserImage),
-			ProjectID:   nullInt64Ptr(row.ProjectID),
-			ArticleSlug: dto.NullString(row.ArticleSlug),
-			Type:        row.Type,
 			Body:        row.Body,
+			UserID:      row.UserID,
+			ProjectID:   row.ProjectID,
+			ArticleSlug: row.ArticleSlug,
+			Type:        row.Type,
 			CreatedAt:   row.CreatedAt,
 			UpdatedAt:   row.UpdatedAt,
-		})
+		}, row.UserName, row.UserImage))
 	}
 	return comments, nil
 }
@@ -105,18 +103,16 @@ func (s *service) ListArticleComments(ctx context.Context, slug string) ([]dto.C
 	}
 	comments := make([]dto.Comment, 0, len(rows))
 	for _, row := range rows {
-		comments = append(comments, dto.Comment{
+		comments = append(comments, dto.FromComment(db.Comment{
 			ID:          row.ID,
-			UserID:      row.UserID,
-			UserName:    row.UserName,
-			UserImage:   dto.NullString(row.UserImage),
-			ProjectID:   nullInt64Ptr(row.ProjectID),
-			ArticleSlug: dto.NullString(row.ArticleSlug),
-			Type:        row.Type,
 			Body:        row.Body,
+			UserID:      row.UserID,
+			ProjectID:   row.ProjectID,
+			ArticleSlug: row.ArticleSlug,
+			Type:        row.Type,
 			CreatedAt:   row.CreatedAt,
 			UpdatedAt:   row.UpdatedAt,
-		})
+		}, row.UserName, row.UserImage))
 	}
 	return comments, nil
 }
@@ -182,18 +178,7 @@ func (s *service) commentDTO(ctx context.Context, comment db.Comment) (dto.Comme
 	if err != nil {
 		return dto.Comment{}, err
 	}
-	return dto.Comment{
-		ID:          comment.ID,
-		UserID:      comment.UserID,
-		UserName:    user.Name,
-		UserImage:   dto.NullString(user.ImageUrl),
-		ProjectID:   nullInt64Ptr(comment.ProjectID),
-		ArticleSlug: dto.NullString(comment.ArticleSlug),
-		Type:        comment.Type,
-		Body:        comment.Body,
-		CreatedAt:   comment.CreatedAt,
-		UpdatedAt:   comment.UpdatedAt,
-	}, nil
+	return dto.FromComment(comment, user.Name, user.ImageUrl), nil
 }
 
 func validateCommentBody(body string) (string, error) {
@@ -202,12 +187,4 @@ func validateCommentBody(body string) (string, error) {
 		return "", ErrBadRequest
 	}
 	return trimmed, nil
-}
-
-// nullInt64Ptr maps a nullable DB integer to the *int64 the DTO layer exposes.
-func nullInt64Ptr(value sql.NullInt64) *int64 {
-	if !value.Valid {
-		return nil
-	}
-	return &value.Int64
 }

@@ -38,7 +38,7 @@ EMAIL_SENDING_ENABLED=true
 For OAuth2, configure the callback base URL and provider credentials:
 
 ```bash
-OAUTH_BASE_URL=http://localhost:8080/portfolio
+OAUTH_BASE_URL=http://localhost:8081/portfolio
 OAUTH2_REDIRECT_URI=http://localhost:4200/oauth2/redirect
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
@@ -49,8 +49,8 @@ GITHUB_CLIENT_SECRET=your-github-client-secret
 Register these authorized redirect URIs:
 
 ```text
-http://localhost:8080/portfolio/auth/google/callback
-http://localhost:8080/portfolio/auth/github/callback
+http://localhost:8081/portfolio/auth/google/callback
+http://localhost:8081/portfolio/auth/github/callback
 ```
 
 Local database seeding is enabled when `APP_ENV` is `local`, `dev`, or `development` and `SEED_ENABLED=true`. Seeding is skipped for any other `APP_ENV`, including production.
@@ -108,7 +108,7 @@ go build -o bin/portfolio-backend ./cmd/api
 
 ```bash
 docker build -t portfolio-backend-go .
-docker run -p 8080:8080 \
+docker run -p 8081:8081 \
   -e DB_URL=postgres://postgres:123456789@host.docker.internal:5432/portfolio?sslmode=disable \
   -e JWT_SECRET=change-me \
   -e OAUTH_BASE_URL=https://your-domain.example/portfolio \

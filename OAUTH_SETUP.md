@@ -16,12 +16,12 @@ These two config values are easy to confuse. They are **different hops** in the 
 
 | Var | Points to | Used for | Who redirects the browser here |
 |-----|-----------|----------|--------------------------------|
-| `OAUTH_BASE_URL` | your **backend** (`:8080`, incl. `/portfolio/v1`) | building the provider callback URL you register in Google/GitHub | Google / GitHub, after consent |
+| `OAUTH_BASE_URL` | your **backend** (`:8081`, incl. `/portfolio/v1`) | building the provider callback URL you register in Google/GitHub | Google / GitHub, after consent |
 | `OAUTH2_REDIRECT_URI` | your **frontend** (`:4200`) | the page the backend forwards you to after login | your backend, once the JWT is minted |
 
 - `OAUTH_BASE_URL` -  the backend appends `/auth/{google|github}/callback` to it
-  (`service.go`), so `http://localhost:8080/portfolio/v1` →
-  `http://localhost:8080/portfolio/v1/auth/google/callback`. This is what you register
+  (`service.go`), so `http://localhost:8081/portfolio/v1` →
+  `http://localhost:8081/portfolio/v1/auth/google/callback`. This is what you register
   with the provider, character-for-character.
 - `OAUTH2_REDIRECT_URI` -  a real Angular route (`/oauth2/redirect`). The backend redirects
   here with `?token=<jwt>` (success) or `?error=<msg>` (failure). It is a **UI route, not an
@@ -29,7 +29,7 @@ These two config values are easy to confuse. They are **different hops** in the 
 
 ```
 [Browser] click "Continue with Google"
-  → GET  <OAUTH_BASE_URL>/auth/google            backend (:8080) sets cookies, 307 → Google
+  → GET  <OAUTH_BASE_URL>/auth/google            backend (:8081) sets cookies, 307 → Google
   → Google consent screen
   → GET  <OAUTH_BASE_URL>/auth/google/callback   backend validates + exchanges code, mints JWT
   → 302  <OAUTH2_REDIRECT_URI>?token=<jwt>        frontend (:4200) /oauth2/redirect → /home
@@ -43,7 +43,7 @@ These two config values are easy to confuse. They are **different hops** in the 
 1. Go to https://console.cloud.google.com/apis/credentials
 2. **Create Credentials → OAuth client ID → Web application**.
 3. Add an **Authorized redirect URI** (must match exactly):
-   - Local: `http://localhost:8080/portfolio/v1/auth/google/callback`
+   - Local: `http://localhost:8081/portfolio/v1/auth/google/callback`
    - Prod:  `https://<your-domain>/portfolio/v1/auth/google/callback`
 4. Copy the **Client ID** and **Client secret**.
 
@@ -53,7 +53,7 @@ These two config values are easy to confuse. They are **different hops** in the 
 ### GitHub
 1. Go to https://github.com/settings/developers → **OAuth Apps → New OAuth App**.
 2. **Authorization callback URL**:
-   - Local: `http://localhost:8080/portfolio/v1/auth/github/callback`
+   - Local: `http://localhost:8081/portfolio/v1/auth/github/callback`
    - Prod:  `https://<your-domain>/portfolio/v1/auth/github/callback`
 3. Copy the **Client ID** and generate a **Client secret**.
 
@@ -67,7 +67,7 @@ Copy `.env.example` to `.env` and fill in at least:
 DB_URL=postgres://postgres:<password>@localhost:5432/portfolio?sslmode=disable
 JWT_SECRET=<a long random string>
 
-OAUTH_BASE_URL=http://localhost:8080/portfolio/v1
+OAUTH_BASE_URL=http://localhost:8081/portfolio/v1
 OAUTH2_REDIRECT_URI=http://localhost:4200/oauth2/redirect
 
 GOOGLE_CLIENT_ID=<from Google>

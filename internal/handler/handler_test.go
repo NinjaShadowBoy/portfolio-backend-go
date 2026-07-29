@@ -15,22 +15,11 @@ import (
 )
 
 // newTestRouter builds the full route table on a gin engine. A nil service is
-// safe here because every case below is rejected (bad param / missing auth)
-// before any service method is reached. Registering the routes also exercises
-// gin's tree for wildcard/static conflicts, which only surface at build time.
-func newTestRouter(t *testing.T) *gin.Engine {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
-	r := gin.New()
-	New(nil, jwt, "http://localhost/redirect", "/portfolio/v1", false).Routes(r.Group("/portfolio/v1"))
-	return r
-}
-
-// routerWithService is newTestRouter but backed by a concrete service so cases
-// that actually reach a handler body (article listing, comment creation) can
-// assert on the service interaction.
-func routerWithService(t *testing.T, svc service.Service) *gin.Engine {
+// safe for cases rejected (bad param / missing auth) before any service method
+// is reached; cases that reach a handler body pass a fakeService to assert on
+// the interaction. Registering the routes also exercises gin's tree for
+// wildcard/static conflicts, which only surface at build time.
+func newTestRouter(t *testing.T, svc service.Service) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
@@ -76,11 +65,11 @@ func (f *fakeService) ResolveAnonToken(_ context.Context, _ string) (int64, bool
 
 func TestRoutesRegisterWithoutConflict(t *testing.T) {
 	// If gin rejected the wildcard/static route combinations this would panic.
-	newTestRouter(t)
+	newTestRouter(t, nil)
 }
 
 func TestRouting(t *testing.T) {
-	r := newTestRouter(t)
+	r := newTestRouter(t, nil)
 
 	cases := []struct {
 		name   string
@@ -124,7 +113,7 @@ func TestArticleCommentRouteResolves(t *testing.T) {
 				ArticleSlug: dto.Ptr("hello-world"),
 				Body:        "nice article",
 			}}}
-			r := routerWithService(t, svc)
+			r := newTestRouter(t, svc)
 
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
@@ -170,7 +159,7 @@ func TestCreateCommentUnauthorizedWithoutIdentity(t *testing.T) {
 // handler reaches the service, and a validation failure maps to 400.
 func TestCreateCommentBadRequestUnderIdentity(t *testing.T) {
 	svc := &fakeService{createErr: service.ErrBadRequest}
-	r := routerWithService(t, svc)
+	r := newTestRouter(t, svc)
 
 	req := httptest.NewRequest(http.MethodPost, "/portfolio/v1/comments", strings.NewReader(`{"type":"critique","body":"missing a target"}`))
 	req.Header.Set("Content-Type", "application/json")

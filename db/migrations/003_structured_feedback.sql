@@ -16,7 +16,12 @@ ALTER TABLE comments ALTER COLUMN project_id DROP NOT NULL;
 ALTER TABLE comments ADD CONSTRAINT comments_one_target
     CHECK ((project_id IS NULL) <> (article_slug IS NULL));
 
-CREATE INDEX IF NOT EXISTS idx_comments_article_slug ON comments(article_slug);
+-- Partial + composite: project comments (slug NULL, excluded by the XOR above)
+-- never match the lookup, and the listing orders by (created_at, id) DESC, so
+-- this returns article comments pre-sorted without indexing NULL rows.
+CREATE INDEX IF NOT EXISTS idx_comments_article_slug
+    ON comments(article_slug, created_at DESC, id DESC)
+    WHERE article_slug IS NOT NULL;
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_comments_article_slug;

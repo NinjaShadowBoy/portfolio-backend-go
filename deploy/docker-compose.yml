@@ -1,0 +1,69 @@
+# Backend stack: Postgres + the Go API. Deployed to /opt/portfolio/<env>/ on the
+# VPS; CI copies this file up, then runs `docker compose pull && docker compose up -d`.
+#
+# `.env` next to this file is the single source of truth for configuration - the
+# same file the app already expected before it was containerised. It supplies
+# both the compose interpolation values (IMAGE, PORT, POSTGRES_*) and the app's
+# own runtime env via env_file.
+#
+# The API port is published on 127.0.0.1 only; host nginx terminates TLS and
+# proxies to it. Postgres is not published at all - it is reachable only over the
+# compose network, from the api service.
+
+name: portfolio-${DEPLOY_ENV:-production}
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-portfolio}
+    volumes:
+      - db-portfolio:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: ${API_IMAGE:?set API_IMAGE in .env}
+    restart: unless-stopped
+    depends_on:
+      # The app runs its migrations on startup, so it must not start before
+      # Postgres accepts connections - service_healthy, not service_started.
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Overrides whatever host/port .env used for local dev: inside the compose
+      # network the database is reachable as `db`. Everything else (JWT_SECRET,
+      # OAuth creds, SMTP) comes through env_file unchanged.
+      DB_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-portfolio}?sslmode=disable
+      PORT: 8081
+    ports:
+      - "127.0.0.1:${API_PORT:-8081}:8081"
+    healthcheck:
+      # /cron is a 200, no-auth route - the same one the old deploy polled.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/portfolio/v1/cron"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  db-portfolio:

@@ -44,29 +44,19 @@ func TestPtr(t *testing.T) {
 	}
 }
 
-// commentFromDB mirrors the field/pointer mapping the service layer performs
-// when turning a persisted db.Comment into the wire DTO: dto.NullString for the
-// nullable slug and a nil-aware pointer for the now-nullable project id. Keeping
-// a copy here locks the polymorphic-target contract (exactly one of projectId /
-// articleSlug is populated) at the DTO boundary the frontend is coded against.
-func commentFromDB(c db.Comment) Comment {
-	var projectID *int64
-	if c.ProjectID.Valid {
-		v := c.ProjectID.Int64
-		projectID = &v
+func TestNullInt64(t *testing.T) {
+	if got := NullInt64(sql.NullInt64{}); got != nil {
+		t.Fatalf("NullInt64(invalid) = %v, want nil", got)
 	}
-	return Comment{
-		ID:          c.ID,
-		UserID:      c.UserID,
-		ProjectID:   projectID,
-		ArticleSlug: NullString(c.ArticleSlug),
-		Type:        c.Type,
-		Body:        c.Body,
-		CreatedAt:   c.CreatedAt,
-		UpdatedAt:   c.UpdatedAt,
+	got := NullInt64(sql.NullInt64{Int64: 7, Valid: true})
+	if got == nil || *got != 7 {
+		t.Fatalf("NullInt64(valid) = %v, want pointer to 7", got)
 	}
 }
 
+// The FromComment tests lock the polymorphic-target contract (exactly one of
+// projectId / articleSlug is populated) at the DTO boundary the frontend
+// CommentService is coded against.
 func TestCommentDTOArticleTarget(t *testing.T) {
 	now := time.Now()
 	row := db.Comment{
@@ -80,7 +70,7 @@ func TestCommentDTOArticleTarget(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	got := commentFromDB(row)
+	got := FromComment(row, "Reader", sql.NullString{})
 
 	if got.ProjectID != nil {
 		t.Fatalf("ProjectID = %v, want nil for an article comment", got.ProjectID)
@@ -119,7 +109,7 @@ func TestCommentDTOProjectTarget(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	got := commentFromDB(row)
+	got := FromComment(row, "Reader", sql.NullString{})
 
 	if got.ProjectID == nil || *got.ProjectID != 7 {
 		t.Fatalf("ProjectID = %v, want pointer to 7", got.ProjectID)

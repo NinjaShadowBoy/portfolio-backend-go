@@ -216,7 +216,7 @@ ports e.g. production 4000, staging 4001.
 ### 3.3 nginx
 
 Two server blocks (kept in the repos under `deploy/nginx/` and documented):
-- **`api.alexabena.me`** → `proxy_pass http://127.0.0.1:8080;` (Go backend).
+- **`api.alexabena.me`** → `proxy_pass http://127.0.0.1:8081;` (Go backend).
   Forward `Host` and `X-Forwarded-Proto`; do **not** strip cookies. TLS via
   certbot.
 - **`alexabena.me` / `alexabena.space`** → `proxy_pass http://127.0.0.1:4000;`

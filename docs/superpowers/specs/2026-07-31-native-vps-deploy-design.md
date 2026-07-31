@@ -159,6 +159,13 @@ only — migrations already applied are not reversed automatically.
   stays conceptually the same (`BACKEND_ENV` secret is still the source of
   truth).
 - `.github/workflows/deploy.yml` — as described above.
+- `.github/workflows/ci.yml` — remove the `image` job (builds the
+  `Dockerfile`, no push, as a PR-time sanity check). With no `Dockerfile`
+  there is nothing for it to build; the `test` job's existing `make build`
+  step already catches a broken binary build.
+- `README.md` — drop the `## Docker` section (build/run instructions for an
+  image that no longer exists).
+- `Makefile` — drop the `docker` target.
 
 **New:** `deploy/portfolio-backend@.service` (templated systemd user unit),
 versioned with the code and copied up like the compose file was.

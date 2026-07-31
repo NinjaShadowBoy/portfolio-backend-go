@@ -1,4 +1,4 @@
-.PHONY: fmt test build docker sqlc clean
+.PHONY: fmt test build sqlc clean
 
 fmt:
 	gofmt -w cmd internal
@@ -11,9 +11,6 @@ test:
 
 build:
 	CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o bin/portfolio-backend ./cmd/api
-
-docker:
-	docker build -t portfolio-backend-go .
 
 clean:
 	rm -rf bin

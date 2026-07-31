@@ -32,25 +32,8 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # Same flags as the Dockerfile, via the Makefile as single source of truth.
+      # Same flags the deploy build uses, via the Makefile as single source of
+      # truth. Catches a broken cross-compile on the PR instead of at deploy
+      # time.
       - name: Build
         run: make build
-
-  image:
-    name: Build image
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      # Build only - never push from CI. This catches a broken Dockerfile on the
-      # PR instead of at deploy time. Cached to GitHub Actions cache so the
-      # deploy build afterwards is mostly layer hits.
-      - name: Build image (no push)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

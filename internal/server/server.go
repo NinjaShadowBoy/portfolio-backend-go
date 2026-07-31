@@ -70,7 +70,7 @@ func New(cfg config.Config) (Server, error) {
 		emails:  emails,
 		svc:     svc,
 		http: &http.Server{
-			Addr:              ":" + cfg.Port,
+			Addr:              "127.0.0.1:" + cfg.Port,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       30 * time.Second,

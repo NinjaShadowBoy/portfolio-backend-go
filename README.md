@@ -104,22 +104,6 @@ go test ./...
 go build -o bin/portfolio-backend ./cmd/api
 ```
 
-## Docker
-
-```bash
-docker build -t portfolio-backend-go .
-docker run -p 8081:8081 \
-  -e DB_URL=postgres://postgres:123456789@host.docker.internal:5432/portfolio?sslmode=disable \
-  -e JWT_SECRET=change-me \
-  -e OAUTH_BASE_URL=https://your-domain.example/portfolio \
-  -e OAUTH2_REDIRECT_URI=https://your-domain.example/oauth2/redirect \
-  -e GOOGLE_CLIENT_ID=your-google-client-id \
-  -e GOOGLE_CLIENT_SECRET=your-google-client-secret \
-  -e GITHUB_CLIENT_ID=your-github-client-id \
-  -e GITHUB_CLIENT_SECRET=your-github-client-secret \
-  portfolio-backend-go
-```
-
 ## Notes
 
 - Existing plaintext passwords are preserved for compatibility.

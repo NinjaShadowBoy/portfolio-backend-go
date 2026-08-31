@@ -177,11 +177,58 @@ WITH project AS (
     SELECT id
     FROM users
     WHERE email = 'alex@example.com'
-), seed_rating(rating, comment) AS (
-    VALUES (5, 'Fast, polished, and easy to navigate.')
+), seed_rating(rating) AS (
+    VALUES (5)
 )
-INSERT INTO ratings (rating, comment, user_id, project_id, created_at, updated_at)
-SELECT seed_rating.rating, seed_rating.comment, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+INSERT INTO ratings (rating, user_id, project_id, created_at, updated_at)
+SELECT seed_rating.rating, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM seed_rating
+CROSS JOIN seed_user
+CROSS JOIN project
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ratings r
+    WHERE r.user_id = seed_user.id
+      AND r.project_id = project.id
+);
+
+WITH project AS (
+    SELECT id
+    FROM projects
+    WHERE name = 'Portfolio Platform'
+), seed_user AS (
+    SELECT id
+    FROM users
+    WHERE email = 'alex@example.com'
+), seed_comment(body) AS (
+    VALUES ('Fast, polished, and easy to navigate.')
+)
+INSERT INTO comments (body, user_id, project_id, created_at, updated_at)
+SELECT seed_comment.body, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM seed_comment
+CROSS JOIN seed_user
+CROSS JOIN project
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM comments c
+    WHERE c.user_id = seed_user.id
+      AND c.project_id = project.id
+      AND c.body = seed_comment.body
+);
+
+WITH project AS (
+    SELECT id
+    FROM projects
+    WHERE name = 'Cloud Gallery API'
+), seed_user AS (
+    SELECT id
+    FROM users
+    WHERE email = 'demo@example.com'
+), seed_rating(rating) AS (
+    VALUES (4)
+)
+INSERT INTO ratings (rating, user_id, project_id, created_at, updated_at)
+SELECT seed_rating.rating, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM seed_rating
 CROSS JOIN seed_user
 CROSS JOIN project
@@ -200,17 +247,18 @@ WITH project AS (
     SELECT id
     FROM users
     WHERE email = 'demo@example.com'
-), seed_rating(rating, comment) AS (
-    VALUES (4, 'Clean API design with useful admin controls.')
+), seed_comment(body) AS (
+    VALUES ('Clean API design with useful admin controls.')
 )
-INSERT INTO ratings (rating, comment, user_id, project_id, created_at, updated_at)
-SELECT seed_rating.rating, seed_rating.comment, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-FROM seed_rating
+INSERT INTO comments (body, user_id, project_id, created_at, updated_at)
+SELECT seed_comment.body, seed_user.id, project.id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM seed_comment
 CROSS JOIN seed_user
 CROSS JOIN project
 WHERE NOT EXISTS (
     SELECT 1
-    FROM ratings r
-    WHERE r.user_id = seed_user.id
-      AND r.project_id = project.id
+    FROM comments c
+    WHERE c.user_id = seed_user.id
+      AND c.project_id = project.id
+      AND c.body = seed_comment.body
 );

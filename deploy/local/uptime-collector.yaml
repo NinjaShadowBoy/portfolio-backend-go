@@ -1,0 +1,42 @@
+# Uptime probe for local development: a small OpenTelemetry Collector that
+# requests the API health endpoint every 30 s and reports the result to
+# SigNoz as metrics. This is the same shape the VPS runs (infra repo,
+# roles/uptime), pointed at the container instead of the public URL.
+#
+# Metrics it produces (one series per target):
+#   httpcheck.status{http.status_class="2xx"}   1 when the response was 2xx
+#   httpcheck.duration                          round-trip time in ms
+#   httpcheck.error                             1 when the request failed
+# Availability over a window = avg(httpcheck.status{http.status_class="2xx"}).
+receivers:
+  http_check:
+    collection_interval: 30s
+    targets:
+      - method: GET
+        endpoints:
+          - http://backend:8081/portfolio/v1/cron
+
+processors:
+  resource:
+    attributes:
+      - key: service.name
+        value: uptime-probe
+        action: upsert
+      - key: deployment.environment
+        value: local
+        action: upsert
+      - key: deployment.environment.name
+        value: local
+        action: upsert
+  batch: {}
+
+exporters:
+  otlphttp:
+    endpoint: http://signoz-ingester:4318
+
+service:
+  pipelines:
+    metrics:
+      receivers: [http_check]
+      processors: [resource, batch]
+      exporters: [otlphttp]

@@ -1,12 +1,11 @@
-package service
+package usecase
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
 )
 
@@ -24,7 +23,7 @@ var commentTypes = map[string]struct{}{
 	"feature_request": {},
 }
 
-func (s *service) CreateComment(ctx context.Context, userID int64, req dto.CommentCreate) (dto.Comment, error) {
+func (s *UseCases) CreateComment(ctx context.Context, userID int64, req dto.CommentCreate) (dto.Comment, error) {
 	body, err := validateCommentBody(req.Body)
 	if err != nil {
 		return dto.Comment{}, err
@@ -47,38 +46,38 @@ func (s *service) CreateComment(ctx context.Context, userID int64, req dto.Comme
 	}
 
 	var (
-		projectArg sql.NullInt64
-		slugArg    sql.NullString
+		projectArg *int64
+		slugArg    *string
 	)
 	if hasProject {
 		if err := s.requireProject(ctx, *req.ProjectID); err != nil {
 			return dto.Comment{}, err
 		}
-		projectArg = sql.NullInt64{Int64: *req.ProjectID, Valid: true}
+		projectArg = dto.Ptr(*req.ProjectID)
 	} else {
 		// Articles have no DB row, so we cannot existence-check the slug;
 		// enforce only a non-empty, sanely-bounded value.
 		if len(slug) > maxArticleSlugLength {
 			return dto.Comment{}, ErrBadRequest
 		}
-		slugArg = sql.NullString{String: slug, Valid: true}
+		slugArg = dto.Ptr(slug)
 	}
 
-	comment, err := s.Q.CreateComment(ctx, body, userID, projectArg, slugArg, req.Type)
+	comment, err := s.repos.Comments().CreateComment(ctx, body, userID, projectArg, slugArg, req.Type)
 	if err != nil {
 		return dto.Comment{}, err
 	}
 	return s.commentDTO(ctx, comment)
 }
 
-func (s *service) ListProjectComments(ctx context.Context, projectID int64) ([]dto.Comment, error) {
-	rows, err := s.Q.ListCommentsByProjectID(ctx, projectID)
+func (s *UseCases) ListProjectComments(ctx context.Context, projectID int64) ([]dto.Comment, error) {
+	rows, err := s.repos.Comments().ListCommentsByProjectID(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	comments := make([]dto.Comment, 0, len(rows))
 	for _, row := range rows {
-		comments = append(comments, dto.FromComment(db.Comment{
+		comments = append(comments, dto.FromComment(domain.Comment{
 			ID:          row.ID,
 			Body:        row.Body,
 			UserID:      row.UserID,
@@ -92,18 +91,18 @@ func (s *service) ListProjectComments(ctx context.Context, projectID int64) ([]d
 	return comments, nil
 }
 
-func (s *service) ListArticleComments(ctx context.Context, slug string) ([]dto.Comment, error) {
+func (s *UseCases) ListArticleComments(ctx context.Context, slug string) ([]dto.Comment, error) {
 	trimmed := strings.TrimSpace(slug)
 	if trimmed == "" {
 		return nil, ErrBadRequest
 	}
-	rows, err := s.Q.ListCommentsByArticleSlug(ctx, sql.NullString{String: trimmed, Valid: true})
+	rows, err := s.repos.Comments().ListCommentsByArticleSlug(ctx, dto.Ptr(trimmed))
 	if err != nil {
 		return nil, err
 	}
 	comments := make([]dto.Comment, 0, len(rows))
 	for _, row := range rows {
-		comments = append(comments, dto.FromComment(db.Comment{
+		comments = append(comments, dto.FromComment(domain.Comment{
 			ID:          row.ID,
 			Body:        row.Body,
 			UserID:      row.UserID,
@@ -117,29 +116,32 @@ func (s *service) ListArticleComments(ctx context.Context, slug string) ([]dto.C
 	return comments, nil
 }
 
-func (s *service) ListUserComments(ctx context.Context, userID int64) ([]dto.Comment, error) {
-	rows, err := s.Q.ListCommentsByUserID(ctx, userID)
+func (s *UseCases) ListUserComments(ctx context.Context, userID int64) ([]dto.Comment, error) {
+	rows, err := s.repos.Comments().ListCommentsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	comments := make([]dto.Comment, 0, len(rows))
+	if len(rows) == 0 {
+		return comments, nil
+	}
+	user, err := s.repos.Users().GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	for _, row := range rows {
-		dtoComment, err := s.commentDTO(ctx, row)
-		if err != nil {
-			return nil, err
-		}
-		comments = append(comments, dtoComment)
+		comments = append(comments, dto.FromComment(row, user.Name, user.ImageURL))
 	}
 	return comments, nil
 }
 
-func (s *service) UpdateComment(ctx context.Context, id int64, userID int64, req dto.CommentUpdate) (dto.Comment, error) {
+func (s *UseCases) UpdateComment(ctx context.Context, id int64, userID int64, req dto.CommentUpdate) (dto.Comment, error) {
 	body, err := validateCommentBody(req.Body)
 	if err != nil {
 		return dto.Comment{}, err
 	}
-	existing, err := s.Q.GetComment(ctx, id)
-	if errors.Is(err, sql.ErrNoRows) {
+	existing, err := s.repos.Comments().GetComment(ctx, id)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.Comment{}, ErrNotFound
 	}
 	if err != nil {
@@ -148,21 +150,21 @@ func (s *service) UpdateComment(ctx context.Context, id int64, userID int64, req
 	if existing.UserID != userID {
 		return dto.Comment{}, ErrForbidden
 	}
-	updated, err := s.Q.UpdateComment(ctx, id, userID, body)
+	updated, err := s.repos.Comments().UpdateComment(ctx, id, userID, body)
 	if err != nil {
 		return dto.Comment{}, err
 	}
 	return s.commentDTO(ctx, updated)
 }
 
-func (s *service) DeleteComment(ctx context.Context, id int64, userID int64) error {
-	rows, err := s.Q.DeleteComment(ctx, id, userID)
+func (s *UseCases) DeleteComment(ctx context.Context, id int64, userID int64) error {
+	rows, err := s.repos.Comments().DeleteComment(ctx, id, userID)
 	if err != nil {
 		return err
 	}
 	if rows == 0 {
-		existing, err := s.Q.GetComment(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
+		existing, err := s.repos.Comments().GetComment(ctx, id)
+		if errors.Is(err, domain.ErrNotFound) {
 			return ErrNotFound
 		}
 		if err == nil && existing.UserID != userID {
@@ -173,12 +175,12 @@ func (s *service) DeleteComment(ctx context.Context, id int64, userID int64) err
 	return nil
 }
 
-func (s *service) commentDTO(ctx context.Context, comment db.Comment) (dto.Comment, error) {
-	user, err := s.Q.GetUserByID(ctx, comment.UserID)
+func (s *UseCases) commentDTO(ctx context.Context, comment domain.Comment) (dto.Comment, error) {
+	user, err := s.repos.Users().GetUserByID(ctx, comment.UserID)
 	if err != nil {
 		return dto.Comment{}, err
 	}
-	return dto.FromComment(comment, user.Name, user.ImageUrl), nil
+	return dto.FromComment(comment, user.Name, user.ImageURL), nil
 }
 
 func validateCommentBody(body string) (string, error) {

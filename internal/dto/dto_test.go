@@ -1,39 +1,28 @@
 package dto
 
 import (
-	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 )
 
 func TestFromUserMapsLastLoginAt(t *testing.T) {
 	lastLogin := time.Date(2026, 6, 16, 8, 0, 0, 0, time.UTC)
-	user := db.User{
+	user := domain.User{
 		ID:          1,
 		Email:       "user@example.com",
 		Name:        "User",
 		Role:        "ADMIN",
 		CreatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		LastLoginAt: sql.NullTime{Time: lastLogin, Valid: true},
+		LastLoginAt: Ptr(lastLogin),
 	}
 
 	got := FromUser(user)
 	if got.ID != 1 || got.Role != "ADMIN" || got.LastLoginAt == nil || !got.LastLoginAt.Equal(lastLogin) {
 		t.Fatalf("unexpected user DTO: %+v", got)
-	}
-}
-
-func TestNullString(t *testing.T) {
-	if got := NullString(sql.NullString{}); got != nil {
-		t.Fatalf("NullString(invalid) = %v, want nil", got)
-	}
-	got := NullString(sql.NullString{String: "hello-world", Valid: true})
-	if got == nil || *got != "hello-world" {
-		t.Fatalf("NullString(valid) = %v, want pointer to \"hello-world\"", got)
 	}
 }
 
@@ -44,33 +33,23 @@ func TestPtr(t *testing.T) {
 	}
 }
 
-func TestNullInt64(t *testing.T) {
-	if got := NullInt64(sql.NullInt64{}); got != nil {
-		t.Fatalf("NullInt64(invalid) = %v, want nil", got)
-	}
-	got := NullInt64(sql.NullInt64{Int64: 7, Valid: true})
-	if got == nil || *got != 7 {
-		t.Fatalf("NullInt64(valid) = %v, want pointer to 7", got)
-	}
-}
-
 // The FromComment tests lock the polymorphic-target contract (exactly one of
 // projectId / articleSlug is populated) at the DTO boundary the frontend
 // CommentService is coded against.
 func TestCommentDTOArticleTarget(t *testing.T) {
 	now := time.Now()
-	row := db.Comment{
+	row := domain.Comment{
 		ID:          11,
 		UserID:      3,
 		Body:        "great write-up",
-		ProjectID:   sql.NullInt64{},                                    // article comments carry no project
-		ArticleSlug: sql.NullString{String: "hello-world", Valid: true}, // target is a slug
+		ProjectID:   nil,                // article comments carry no project
+		ArticleSlug: Ptr("hello-world"), // target is a slug
 		Type:        "suggestion",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 
-	got := FromComment(row, "Reader", sql.NullString{})
+	got := FromComment(row, "Reader", nil)
 
 	if got.ProjectID != nil {
 		t.Fatalf("ProjectID = %v, want nil for an article comment", got.ProjectID)
@@ -98,18 +77,18 @@ func TestCommentDTOArticleTarget(t *testing.T) {
 
 func TestCommentDTOProjectTarget(t *testing.T) {
 	now := time.Now()
-	row := db.Comment{
+	row := domain.Comment{
 		ID:          12,
 		UserID:      3,
 		Body:        "found a bug",
-		ProjectID:   sql.NullInt64{Int64: 7, Valid: true}, // target is a project
-		ArticleSlug: sql.NullString{},                     // no slug
+		ProjectID:   Ptr(int64(7)), // target is a project
+		ArticleSlug: nil,           // no slug
 		Type:        "critique",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 
-	got := FromComment(row, "Reader", sql.NullString{})
+	got := FromComment(row, "Reader", nil)
 
 	if got.ProjectID == nil || *got.ProjectID != 7 {
 		t.Fatalf("ProjectID = %v, want pointer to 7", got.ProjectID)

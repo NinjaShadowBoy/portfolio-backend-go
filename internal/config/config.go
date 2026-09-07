@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,16 @@ type EmailConfig struct {
 }
 
 type Config struct {
-	Port               string
+	// BindAddr is the interface the HTTP server listens on. 127.0.0.1 keeps a
+	// bare-metal run private behind nginx; the container image sets 0.0.0.0
+	// because Docker's port mapping is the boundary there.
+	BindAddr string
+	Port     string
+	// AppEnv is the deployment environment (local, staging, production). It
+	// gates seeding and cookie security and labels telemetry.
+	AppEnv string
+	// ServiceName identifies this process in traces, metrics and logs.
+	ServiceName        string
 	DBURL              string
 	MigrationsPath     string
 	SeedsPath          string
@@ -58,13 +68,18 @@ func Load() (Config, error) {
 	expirationMS := envInt("JWT_EXPIRATION", 86400000)
 	origins := splitCSV(env("CORS_ALLOWED_ORIGINS", "http://localhost:*"))
 
+	// Secrets have no fallback on purpose: a missing value must fail startup
+	// rather than silently run with a key that is in the git history.
 	cfg := Config{
+		BindAddr:           env("BIND_ADDR", "127.0.0.1"),
 		Port:               env("PORT", "8081"),
-		DBURL:              env("DB_URL", "postgres://postgres:123456789@localhost:5432/portfolio?sslmode=disable"),
+		AppEnv:             env("APP_ENV", "local"),
+		ServiceName:        env("OTEL_SERVICE_NAME", "portfolio-backend"),
+		DBURL:              env("DB_URL", ""),
 		MigrationsPath:     env("MIGRATIONS_PATH", "db/migrations"),
 		SeedsPath:          env("SEEDS_PATH", "db/seeds"),
 		SeedEnabled:        isLocalEnvironment() && envBool("SEED_ENABLED", true),
-		JWTSecret:          env("JWT_SECRET", "404E635266556A586E3072357538782F413F4428472B4B6250645367566B5970"),
+		JWTSecret:          env("JWT_SECRET", ""),
 		JWTExpiration:      time.Duration(expirationMS) * time.Millisecond,
 		JWTIssuer:          env("JWT_ISSUER", "NinjaShadowBoy-PortfolioApp"),
 		OAuthBaseURL:       env("OAUTH_BASE_URL", "http://localhost:8081"+BasePath()),
@@ -78,18 +93,42 @@ func Load() (Config, error) {
 		Email: EmailConfig{
 			SMTPHost:            env("SMTP_HOST", "smtp.gmail.com"),
 			SMTPPort:            envInt("SMTP_PORT", 587),
-			SMTPUsername:        env("SMTP_USERNAME", "traintype@gmail.com"),
-			SMTPPassword:        env("SMTP_PASSWORD", "yourAppPassword"),
-			EmailRecipient:      env("EMAIL_RECIPIENT", "alex.nelson.bryan@gmail.com"),
+			SMTPUsername:        env("SMTP_USERNAME", ""),
+			SMTPPassword:        env("SMTP_PASSWORD", ""),
+			EmailRecipient:      env("EMAIL_RECIPIENT", ""),
 			EmailSendingEnabled: envBool("EMAIL_SENDING_ENABLED", false),
 		},
 	}
 
-	if strings.TrimSpace(cfg.JWTSecret) == "" {
-		return Config{}, fmt.Errorf("JWT_SECRET must not be empty")
-	}
+	return cfg, cfg.validate()
+}
 
-	return cfg, nil
+// validate rejects a configuration that would run with a missing secret.
+// Everything listed here has no safe default.
+func (c Config) validate() error {
+	var missing []string
+	if strings.TrimSpace(c.DBURL) == "" {
+		missing = append(missing, "DB_URL")
+	}
+	if len(strings.TrimSpace(c.JWTSecret)) < 32 {
+		missing = append(missing, "JWT_SECRET (at least 32 characters)")
+	}
+	if c.Email.EmailSendingEnabled {
+		for key, value := range map[string]string{
+			"SMTP_USERNAME":   c.Email.SMTPUsername,
+			"SMTP_PASSWORD":   c.Email.SMTPPassword,
+			"EMAIL_RECIPIENT": c.Email.EmailRecipient,
+		} {
+			if strings.TrimSpace(value) == "" {
+				missing = append(missing, key+" (required when EMAIL_SENDING_ENABLED=true)")
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
 }
 
 func loadDotEnv() {

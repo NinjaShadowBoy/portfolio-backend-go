@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/auth"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/usecase"
 )
 
 // newTestRouter builds the full route table on a gin engine. A nil service is
@@ -19,7 +19,7 @@ import (
 // is reached; cases that reach a handler body pass a fakeService to assert on
 // the interaction. Registering the routes also exercises gin's tree for
 // wildcard/static conflicts, which only surface at build time.
-func newTestRouter(t *testing.T, svc service.Service) *gin.Engine {
+func newTestRouter(t *testing.T, svc usecase.Service) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
@@ -29,10 +29,10 @@ func newTestRouter(t *testing.T, svc service.Service) *gin.Engine {
 }
 
 // fakeService implements only the methods the feedback routes touch; the
-// embedded interface satisfies the rest of service.Service and panics if any
+// embedded interface satisfies the rest of usecase.Service and panics if any
 // un-stubbed method is unexpectedly called.
 type fakeService struct {
-	service.Service
+	usecase.Service
 	gotSlug         string
 	articleComments []dto.Comment
 	articleErr      error
@@ -158,7 +158,7 @@ func TestCreateCommentUnauthorizedWithoutIdentity(t *testing.T) {
 // EnsureIdentity provisions an anonymous user (no cookie, no bearer token), the
 // handler reaches the service, and a validation failure maps to 400.
 func TestCreateCommentBadRequestUnderIdentity(t *testing.T) {
-	svc := &fakeService{createErr: service.ErrBadRequest}
+	svc := &fakeService{createErr: usecase.ErrBadRequest}
 	r := newTestRouter(t, svc)
 
 	req := httptest.NewRequest(http.MethodPost, "/portfolio/v1/comments", strings.NewReader(`{"type":"critique","body":"missing a target"}`))

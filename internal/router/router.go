@@ -11,13 +11,17 @@ import (
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/auth"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/config"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/handler"
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/usecase"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
-func New(cfg config.Config, jwt *auth.JWT, svc service.Service) http.Handler {
+func New(cfg config.Config, jwt *auth.JWT, svc usecase.Service) http.Handler {
 	binding.EnableDecoderDisallowUnknownFields = true
 
 	r := gin.New()
+	// otelgin goes first so the server span wraps the logger, recovery and
+	// every handler. It is a no-op until telemetry.Setup installs a provider.
+	r.Use(otelgin.Middleware(cfg.ServiceName))
 	r.Use(gin.Logger(), gin.Recovery(), requestTimeout(30*time.Second))
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: cfg.AllowedOrigins,

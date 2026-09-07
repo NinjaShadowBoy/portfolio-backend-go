@@ -1,15 +1,14 @@
-package service
+package usecase
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
 )
 
@@ -21,35 +20,36 @@ var anonAnimals = []string{
 	"moose", "crane", "ibex", "wren",
 }
 
-// CreateAnonymousUser provisions a fresh anonymous user and its opaque token.
-// The caller stores the returned raw token in the visitor's cookie; only its
-// SHA-256 hash is persisted.
-func (s *service) CreateAnonymousUser(ctx context.Context) (int64, string, error) {
+func (s *UseCases) CreateAnonymousUser(ctx context.Context) (int64, string, error) {
+	rawToken, err := randomToken()
+	if err != nil {
+		return 0, "", err
+	}
 	animal := anonAnimals[randomIndex(len(anonAnimals))]
-	count, err := s.Q.CountUsersByNamePrefix(ctx, "anonymous-"+animal+"-%")
+	user, err := inTransaction(ctx, s, func(tx *UseCases) (domain.User, error) {
+		count, err := tx.repos.Users().CountUsersByNamePrefix(ctx, "anonymous-"+animal+"-%")
+		if err != nil {
+			return domain.User{}, err
+		}
+		name := fmt.Sprintf("anonymous-%s-%d", animal, count+1)
+		user, err := tx.repos.Users().CreateUser(ctx, domain.User{Email: "anon-" + rawToken + "@anonymous.invalid", Name: name, Provider: "ANON"})
+		if err != nil {
+			return domain.User{}, err
+		}
+		if err := tx.repos.AnonymousTokens().CreateAnonToken(ctx, hashToken(rawToken), user.ID); err != nil {
+			return domain.User{}, err
+		}
+		return user, nil
+	})
 	if err != nil {
-		return 0, "", err
-	}
-	name := fmt.Sprintf("anonymous-%s-%d", animal, count+1)
-
-	rawToken := randomToken()
-	// email is UNIQUE NOT NULL; anon users get a synthetic, unroutable address.
-	email := "anon-" + rawToken + "@anonymous.invalid"
-	user, err := s.Q.CreateUser(ctx, email, sql.NullString{}, name, "ANON", sql.NullString{}, sql.NullString{}, false, sql.NullTime{})
-	if err != nil {
-		return 0, "", err
-	}
-	if err := s.Q.CreateAnonToken(ctx, hashToken(rawToken), user.ID); err != nil {
 		return 0, "", err
 	}
 	return user.ID, rawToken, nil
 }
 
-// ResolveAnonToken maps a raw cookie token to its anon user id. ok is false when
-// the token is unknown (e.g. cleared server-side), without erroring.
-func (s *service) ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error) {
-	user, err := s.Q.GetUserByAnonToken(ctx, hashToken(rawToken))
-	if errors.Is(err, sql.ErrNoRows) {
+func (s *UseCases) ResolveAnonToken(ctx context.Context, rawToken string) (int64, bool, error) {
+	user, err := s.repos.AnonymousTokens().GetUserByAnonToken(ctx, hashToken(rawToken))
+	if errors.Is(err, domain.ErrNotFound) {
 		return 0, false, nil
 	}
 	if err != nil {
@@ -59,9 +59,10 @@ func (s *service) ResolveAnonToken(ctx context.Context, rawToken string) (int64,
 }
 
 // GetIdentity returns the caller's public identity for GET /auth/me.
-func (s *service) GetIdentity(ctx context.Context, userID int64) (dto.Identity, error) {
-	user, err := s.Q.GetUserByID(ctx, userID)
-	if errors.Is(err, sql.ErrNoRows) {
+
+func (s *UseCases) GetIdentity(ctx context.Context, userID int64) (dto.Identity, error) {
+	user, err := s.repos.Users().GetUserByID(ctx, userID)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.Identity{}, ErrNotFound
 	}
 	if err != nil {
@@ -74,12 +75,13 @@ func (s *service) GetIdentity(ctx context.Context, userID int64) (dto.Identity, 
 // to a real account, then retires the anon user. Comments always transfer; for
 // the one-per-project star, projects the account already rated keep the
 // account's existing star and the anon star is dropped.
-func (s *service) ClaimAnonymousActivity(ctx context.Context, anonUserID, realUserID int64) error {
+
+func (s *UseCases) claimAnonymousActivity(ctx context.Context, anonUserID, realUserID int64) error {
 	if anonUserID == realUserID {
 		return nil
 	}
-	anon, err := s.Q.GetUserByID(ctx, anonUserID)
-	if errors.Is(err, sql.ErrNoRows) {
+	anon, err := s.repos.Users().GetUserByID(ctx, anonUserID)
+	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -89,27 +91,27 @@ func (s *service) ClaimAnonymousActivity(ctx context.Context, anonUserID, realUs
 	if anon.Provider != "ANON" {
 		return nil
 	}
-	if err := s.Q.ReassignCommentsToUser(ctx, realUserID, anonUserID); err != nil {
+	if err := s.repos.Comments().ReassignCommentsToUser(ctx, realUserID, anonUserID); err != nil {
 		return err
 	}
-	if err := s.Q.ReassignRatingsToUser(ctx, realUserID, anonUserID); err != nil {
+	if err := s.repos.Ratings().ReassignRatingsToUser(ctx, realUserID, anonUserID); err != nil {
 		return err
 	}
 	// Any ratings left on the anon user collided with the account's own; drop them.
-	if err := s.Q.DeleteRatingsByUserID(ctx, anonUserID); err != nil {
+	if err := s.repos.Ratings().DeleteRatingsByUserID(ctx, anonUserID); err != nil {
 		return err
 	}
-	return s.Q.DeleteUser(ctx, anonUserID)
+	return s.repos.Users().DeleteUser(ctx, anonUserID)
 }
 
-func identityDTO(user db.User) dto.Identity {
+func identityDTO(user domain.User) dto.Identity {
 	anon := user.Provider == "ANON"
 	identity := dto.Identity{
 		ID:        user.ID,
 		Name:      user.Name,
 		Role:      user.Role,
 		Provider:  user.Provider,
-		ImageURL:  dto.NullString(user.ImageUrl),
+		ImageURL:  user.ImageURL,
 		Anonymous: anon,
 	}
 	if !anon {
@@ -118,12 +120,12 @@ func identityDTO(user db.User) dto.Identity {
 	return identity
 }
 
-func randomToken() string {
+func randomToken() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return ""
+		return "", err
 	}
-	return hex.EncodeToString(buf)
+	return hex.EncodeToString(buf), nil
 }
 
 func hashToken(rawToken string) string {
@@ -133,6 +135,7 @@ func hashToken(rawToken string) string {
 
 // randomIndex returns a crypto-random index in [0, n). The mod bias across a
 // 256-value byte and a 20-element list is negligible for a cosmetic name.
+
 func randomIndex(n int) int {
 	if n <= 0 {
 		return 0
@@ -142,4 +145,11 @@ func randomIndex(n int) int {
 		return 0
 	}
 	return int(buf[0]) % n
+}
+
+func (s *UseCases) ClaimAnonymousActivity(ctx context.Context, anonUserID int64, realUserID int64) error {
+	_, err := inTransaction(ctx, s, func(tx *UseCases) (struct{}, error) {
+		return struct{}{}, tx.claimAnonymousActivity(ctx, anonUserID, realUserID)
+	})
+	return err
 }

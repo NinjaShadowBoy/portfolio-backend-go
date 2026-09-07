@@ -1,21 +1,21 @@
 package auth
 
 import (
-	"database/sql"
 	"testing"
 	"time"
 
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
 )
 
 func TestJWTGenerateAndParse(t *testing.T) {
 	jwt := NewJWT("test-secret", time.Hour, "test-issuer")
-	user := db.User{
-		ID:    7,
-		Email: "user@example.com",
-		Name:  "User",
-		Role:  "USER",
-		Pwd:   sql.NullString{String: "password", Valid: true},
+	user := domain.User{
+		ID:           7,
+		Email:        "user@example.com",
+		Name:         "User",
+		Role:         "USER",
+		PasswordHash: dto.Ptr("password"),
 	}
 
 	resp, err := jwt.GenerateLoginResponse(user)
@@ -40,17 +40,17 @@ func TestVerifyPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashPassword() error = %v", err)
 	}
-	if !VerifyPassword(sql.NullString{String: hashed, Valid: true}, "password") {
+	if !VerifyPassword(dto.Ptr(hashed), "password") {
 		t.Fatal("expected hashed password to match")
 	}
-	if VerifyPassword(sql.NullString{String: hashed, Valid: true}, "wrong") {
+	if VerifyPassword(dto.Ptr(hashed), "wrong") {
 		t.Fatal("expected wrong password to fail")
 	}
-	if VerifyPassword(sql.NullString{}, "password") {
+	if VerifyPassword(nil, "password") {
 		t.Fatal("expected missing password to fail")
 	}
 	// Backward compatibility: legacy plaintext values still verify.
-	if !VerifyPassword(sql.NullString{String: "legacy", Valid: true}, "legacy") {
+	if !VerifyPassword(dto.Ptr("legacy"), "legacy") {
 		t.Fatal("expected legacy plaintext password to match")
 	}
 }

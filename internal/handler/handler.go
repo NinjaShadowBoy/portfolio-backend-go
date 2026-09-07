@@ -13,7 +13,7 @@ import (
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/auth"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/middleware"
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/service"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/usecase"
 )
 
 type API interface {
@@ -21,7 +21,7 @@ type API interface {
 }
 
 type api struct {
-	svc              service.Service
+	svc              usecase.Service
 	jwt              *auth.JWT
 	oauthRedirectURI string
 	basePath         string
@@ -37,17 +37,17 @@ type oauthCookieConfig struct {
 // oauthCookieNames holds the per-provider cookie names. The cookie Path is
 // derived from the router base path at request time (see cookieConfig) so it
 // always matches the actual versioned callback route.
-var oauthCookieNames = map[service.OAuthProvider]struct {
+var oauthCookieNames = map[usecase.OAuthProvider]struct {
 	StateName    string
 	VerifierName string
 }{
-	service.OAuthProviderGoogle: {"oauth_google_state", "oauth_google_pkce_verifier"},
-	service.OAuthProviderGitHub: {"oauth_github_state", "oauth_github_pkce_verifier"},
+	usecase.OAuthProviderGoogle: {"oauth_google_state", "oauth_google_pkce_verifier"},
+	usecase.OAuthProviderGitHub: {"oauth_github_state", "oauth_github_pkce_verifier"},
 }
 
 const oauthCookieMaxAge = 10 * 60
 
-func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, cookieSecure bool) API {
+func New(svc usecase.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, cookieSecure bool) API {
 	return &api{
 		svc:              svc,
 		jwt:              jwt,
@@ -60,10 +60,10 @@ func New(svc service.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, 
 func (h *api) Routes(r *gin.RouterGroup) {
 	r.POST("/auth/login", h.Login)
 	r.POST("/auth/register", h.Register)
-	r.GET("/auth/google", h.OAuthLogin(service.OAuthProviderGoogle))
-	r.GET("/auth/google/callback", h.OAuthCallback(service.OAuthProviderGoogle))
-	r.GET("/auth/github", h.OAuthLogin(service.OAuthProviderGitHub))
-	r.GET("/auth/github/callback", h.OAuthCallback(service.OAuthProviderGitHub))
+	r.GET("/auth/google", h.OAuthLogin(usecase.OAuthProviderGoogle))
+	r.GET("/auth/google/callback", h.OAuthCallback(usecase.OAuthProviderGoogle))
+	r.GET("/auth/github", h.OAuthLogin(usecase.OAuthProviderGitHub))
+	r.GET("/auth/github/callback", h.OAuthCallback(usecase.OAuthProviderGitHub))
 	r.POST("/auth/github/device", h.GitHubDeviceStart)
 	r.POST("/auth/github/device/token", h.GitHubDevicePoll)
 	r.GET("/auth/me", h.Me)
@@ -176,7 +176,7 @@ func (h *api) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, dto.MessageResponse{Message: "User created successfully"})
 }
 
-func (h *api) OAuthLogin(provider service.OAuthProvider) gin.HandlerFunc {
+func (h *api) OAuthLogin(provider usecase.OAuthProvider) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start, err := h.svc.StartOAuthLogin(provider)
 		if err != nil {
@@ -191,7 +191,7 @@ func (h *api) OAuthLogin(provider service.OAuthProvider) gin.HandlerFunc {
 	}
 }
 
-func (h *api) OAuthCallback(provider service.OAuthProvider) gin.HandlerFunc {
+func (h *api) OAuthCallback(provider usecase.OAuthProvider) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cookies := h.oauthCookieConfigFor(provider)
 		if errMsg := c.Query("error"); errMsg != "" {
@@ -254,7 +254,7 @@ func (h *api) GitHubDevicePoll(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	if status == service.DeviceAuthComplete {
+	if status == usecase.DeviceAuthComplete {
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -291,10 +291,10 @@ func (h *api) writeIdentity(c *gin.Context, ctx context.Context, userID int64) {
 	c.JSON(http.StatusOK, gin.H{"identity": identity})
 }
 
-func (h *api) oauthCookieConfigFor(provider service.OAuthProvider) oauthCookieConfig {
+func (h *api) oauthCookieConfigFor(provider usecase.OAuthProvider) oauthCookieConfig {
 	names, ok := oauthCookieNames[provider]
 	if !ok {
-		provider = service.OAuthProviderGoogle
+		provider = usecase.OAuthProviderGoogle
 		names = oauthCookieNames[provider]
 	}
 	return oauthCookieConfig{
@@ -482,7 +482,7 @@ func (h *api) HasUserRatedProject(c *gin.Context) {
 func (h *api) CreateRating(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	var req dto.RatingCreate
@@ -500,7 +500,7 @@ func (h *api) CreateRating(c *gin.Context) {
 func (h *api) UpdateRating(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	id, ok := parseID(c, "id")
@@ -522,7 +522,7 @@ func (h *api) UpdateRating(c *gin.Context) {
 func (h *api) DeleteRating(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	id, ok := parseID(c, "id")
@@ -565,7 +565,7 @@ func (h *api) ListArticleComments(c *gin.Context) {
 func (h *api) CreateComment(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	var req dto.CommentCreate
@@ -583,7 +583,7 @@ func (h *api) CreateComment(c *gin.Context) {
 func (h *api) UpdateComment(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	id, ok := parseID(c, "id")
@@ -605,7 +605,7 @@ func (h *api) UpdateComment(c *gin.Context) {
 func (h *api) DeleteComment(c *gin.Context) {
 	identity, ok := middleware.IdentityFromContext(c)
 	if !ok {
-		writeError(c, service.ErrUnauthorized)
+		writeError(c, usecase.ErrUnauthorized)
 		return
 	}
 	id, ok := parseID(c, "id")
@@ -818,22 +818,16 @@ func setOAuthCookie(c *gin.Context, name, value, path string) {
 }
 
 func clearOAuthCookie(c *gin.Context, stateName, verifierName, path string) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     stateName,
-		Value:    "",
-		Path:     path,
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     verifierName,
-		Value:    "",
-		Path:     path,
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	for _, name := range []string{stateName, verifierName} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     path,
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 }
 
 func secureEqual(a, b string) bool {
@@ -862,15 +856,15 @@ func redirectOAuth(c *gin.Context, baseURL, token, errMsg string) {
 
 func writeError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrNotFound):
+	case errors.Is(err, usecase.ErrNotFound):
 		middleware.WriteError(c, http.StatusNotFound, "RESOURCE_NOT_FOUND", "Resource not found")
-	case errors.Is(err, service.ErrUnauthorized):
+	case errors.Is(err, usecase.ErrUnauthorized):
 		middleware.WriteError(c, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Authentication failed")
-	case errors.Is(err, service.ErrForbidden):
+	case errors.Is(err, usecase.ErrForbidden):
 		middleware.WriteError(c, http.StatusForbidden, "ACCESS_DENIED", "Access denied")
-	case errors.Is(err, service.ErrConflict) || errors.Is(err, service.ErrAlreadyExists):
+	case errors.Is(err, usecase.ErrConflict) || errors.Is(err, usecase.ErrAlreadyExists):
 		middleware.WriteError(c, http.StatusConflict, "RESOURCE_ALREADY_EXISTS", "Resource already exists")
-	case errors.Is(err, service.ErrBadRequest):
+	case errors.Is(err, usecase.ErrBadRequest):
 		middleware.WriteError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 	default:
 		middleware.WriteError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")

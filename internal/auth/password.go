@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"database/sql"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -22,12 +21,12 @@ func HashPassword(plaintext string) (string, error) {
 // Stored values are expected to be bcrypt hashes. For backward compatibility
 // with rows created before hashing was introduced, a stored value that is not a
 // bcrypt hash is compared as plaintext.
-func VerifyPassword(stored sql.NullString, candidate string) bool {
-	if !stored.Valid {
+func VerifyPassword(stored *string, candidate string) bool {
+	if stored == nil {
 		return false
 	}
 
-	value := stored.String
+	value := *stored
 	if isBcryptHash(value) {
 		return bcrypt.CompareHashAndPassword([]byte(value), []byte(candidate)) == nil
 	}
@@ -39,4 +38,12 @@ func VerifyPassword(stored sql.NullString, candidate string) bool {
 func isBcryptHash(value string) bool {
 	// All bcrypt variants ($2a$, $2b$, $2y$) share the "$2" prefix.
 	return strings.HasPrefix(value, "$2")
+}
+
+// Passwords adapts bcrypt and the legacy verification policy to the use-case port.
+type Passwords struct{}
+
+func (Passwords) Hash(value string) (string, error) { return HashPassword(value) }
+func (Passwords) Verify(stored *string, candidate string) bool {
+	return VerifyPassword(stored, candidate)
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
 )
 
@@ -34,7 +34,7 @@ func NewJWT(secret string, expiration time.Duration, issuer string) *JWT {
 	}
 }
 
-func (j *JWT) GenerateLoginResponse(user db.User) (dto.LoginResponse, error) {
+func (j *JWT) GenerateLoginResponse(user domain.User) (dto.LoginResponse, error) {
 	token, err := j.GenerateToken(user)
 	if err != nil {
 		return dto.LoginResponse{}, err
@@ -47,7 +47,7 @@ func (j *JWT) GenerateLoginResponse(user db.User) (dto.LoginResponse, error) {
 	}, nil
 }
 
-func (j *JWT) GenerateToken(user db.User) (string, error) {
+func (j *JWT) GenerateToken(user domain.User) (string, error) {
 	now := time.Now()
 	roles := []string{user.Role}
 	if user.Role == "ADMIN" {

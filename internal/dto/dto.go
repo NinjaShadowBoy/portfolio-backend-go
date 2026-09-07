@@ -1,10 +1,9 @@
 package dto
 
 import (
-	"database/sql"
 	"time"
 
-	"github.com/ninjashadowboy/portfolio-backend-go/internal/db"
+	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 )
 
 type User struct {
@@ -201,19 +200,14 @@ type ErrorResponse struct {
 	Message   string    `json:"message"`
 }
 
-func FromUser(user db.User) User {
-	var lastLoginAt *time.Time
-	if user.LastLoginAt.Valid {
-		lastLoginAt = &user.LastLoginAt.Time
-	}
-
+func FromUser(user domain.User) User {
 	return User{
 		ID:          user.ID,
 		Email:       user.Email,
 		Name:        user.Name,
 		Role:        user.Role,
 		CreatedAt:   user.CreatedAt,
-		LastLoginAt: lastLoginAt,
+		LastLoginAt: user.LastLoginAt,
 	}
 }
 
@@ -221,14 +215,14 @@ func FromUser(user db.User) User {
 // wire DTO. Exactly one of projectId / articleSlug is populated (the DB CHECK
 // enforces the XOR) — the polymorphic-target contract the frontend
 // CommentService is coded against.
-func FromComment(comment db.Comment, userName string, userImage sql.NullString) Comment {
+func FromComment(comment domain.Comment, userName string, userImage *string) Comment {
 	return Comment{
 		ID:          comment.ID,
 		UserID:      comment.UserID,
 		UserName:    userName,
-		UserImage:   NullString(userImage),
-		ProjectID:   NullInt64(comment.ProjectID),
-		ArticleSlug: NullString(comment.ArticleSlug),
+		UserImage:   userImage,
+		ProjectID:   comment.ProjectID,
+		ArticleSlug: comment.ArticleSlug,
 		Type:        comment.Type,
 		Body:        comment.Body,
 		CreatedAt:   comment.CreatedAt,
@@ -238,20 +232,6 @@ func FromComment(comment db.Comment, userName string, userImage sql.NullString) 
 
 func Ptr[T any](value T) *T {
 	return &value
-}
-
-func NullString(value sql.NullString) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-func NullInt64(value sql.NullInt64) *int64 {
-	if !value.Valid {
-		return nil
-	}
-	return &value.Int64
 }
 
 func PtrString(value *string) string {

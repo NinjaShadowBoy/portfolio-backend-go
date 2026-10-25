@@ -37,6 +37,20 @@ The frontend that consumes it is
 - Google and GitHub OAuth2 login
 - SMTP email notifications for contact form submissions
 
+## Quick start
+
+You need Go 1.26 and either Docker or a local PostgreSQL.
+
+```bash
+git clone https://github.com/NinjaShadowBoy/portfolio-backend-go.git
+cd portfolio-backend-go
+docker compose up -d db          # PostgreSQL on localhost:5432, password 123456789
+cp .env.example .env             # then set DB_URL to match (see below)
+go run ./cmd/api                 # API on http://localhost:8081/portfolio/v1
+```
+
+Migrations run on startup, so there is no separate database step.
+
 ## Setup
 
 Copy the example environment file:

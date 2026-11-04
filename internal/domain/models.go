@@ -101,3 +101,44 @@ type RatingDistribution struct {
 	Rating int32
 	Count  int32
 }
+
+// AdminUser is a user row plus the activity counts shown in the admin list.
+type AdminUser struct {
+	User
+	CommentCount int32
+	RatingCount  int32
+}
+
+// UserFilter narrows the admin user list. Search matches name or email.
+type UserFilter struct {
+	Search           *string
+	IncludeAnonymous bool
+	Limit            int32
+	Offset           int32
+}
+
+// AdminComment is a comment with its author and, for project comments, the
+// project name, so the moderation feed needs no extra lookups.
+type AdminComment struct {
+	CommentWithAuthor
+	UserProvider string
+	ProjectName  *string
+}
+
+// CommentFilter narrows the moderation feed. Target is "project" or "article".
+type CommentFilter struct {
+	Type   *string
+	Target *string
+	Limit  int32
+	Offset int32
+}
+
+type AdminStats struct {
+	Users          int32
+	AnonymousUsers int32
+	Admins         int32
+	Projects       int32
+	Comments       int32
+	Ratings        int32
+	UnreadMessages int32
+}

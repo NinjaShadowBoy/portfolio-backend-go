@@ -44,3 +44,18 @@ func (r *repositories) UpdateComment(ctx context.Context, id int64, userID int64
 	row, err := r.q.UpdateComment(ctx, id, userID, body)
 	return fromComment(row), repositoryError(err)
 }
+
+func (r *repositories) CountCommentsForAdmin(ctx context.Context, filter domain.CommentFilter) (int32, error) {
+	row, err := r.q.CountCommentsForAdmin(ctx, nullString(filter.Type), nullString(filter.Target))
+	return row, repositoryError(err)
+}
+
+func (r *repositories) DeleteCommentByID(ctx context.Context, id int64) (int64, error) {
+	row, err := r.q.DeleteCommentByID(ctx, id)
+	return row, repositoryError(err)
+}
+
+func (r *repositories) ListCommentsForAdmin(ctx context.Context, filter domain.CommentFilter) ([]domain.AdminComment, error) {
+	row, err := r.q.ListCommentsForAdmin(ctx, nullString(filter.Type), nullString(filter.Target), filter.Offset, filter.Limit)
+	return mapRows(row, fromListCommentsForAdminRow), repositoryError(err)
+}

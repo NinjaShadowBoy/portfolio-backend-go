@@ -9,7 +9,3 @@ FROM anon_tokens t
 JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = $1
 LIMIT 1;
-
--- name: DeleteAnonTokensByUserID :exec
-DELETE FROM anon_tokens
-WHERE user_id = $1;

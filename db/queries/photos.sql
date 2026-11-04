@@ -22,12 +22,6 @@ FROM photos
 WHERE project_id = $1
 ORDER BY created_at DESC, id DESC;
 
--- name: ListOrphanProfilePhotos :many
-SELECT *
-FROM photos
-WHERE project_id IS NULL
-ORDER BY created_at DESC, id DESC;
-
 -- name: ListPhotosByProjectIDs :many
 SELECT *
 FROM photos

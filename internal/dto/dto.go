@@ -16,14 +16,14 @@ type User struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" sanitize:"email" binding:"required,email,max=254"`
+	Password string `json:"password" binding:"required,max=1024"`
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	Email    string `json:"email" sanitize:"email" binding:"required,email,max=254"`
+	Password string `json:"password" binding:"required,min=8,maxbytes=72"`
+	Name     string `json:"name" sanitize:"text" binding:"required,max=100"`
 }
 
 type LoginResponse struct {
@@ -48,7 +48,7 @@ type DeviceCodeResponse struct {
 
 // DevicePollRequest is the body the client sends while polling a device-flow login.
 type DevicePollRequest struct {
-	DeviceCode string `json:"deviceCode"`
+	DeviceCode string `json:"deviceCode" sanitize:"text" binding:"required,max=255"`
 }
 
 // DeviceStatusResponse is returned (HTTP 202) while the user has not yet
@@ -75,22 +75,22 @@ type Project struct {
 }
 
 type ProjectCreate struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Technologies []string `json:"technologies"`
-	GithubLink   *string  `json:"githubLink"`
-	Challenges   *string  `json:"challenges"`
-	WhatILearned *string  `json:"whatILearned"`
+	Name         string   `json:"name" sanitize:"text" binding:"required,max=500"`
+	Description  string   `json:"description" sanitize:"multiline" binding:"required"`
+	Technologies []string `json:"technologies" sanitize:"text" binding:"max=50,dive,required,max=255"`
+	GithubLink   *string  `json:"githubLink" sanitize:"text" binding:"omitempty,max=2000"`
+	Challenges   *string  `json:"challenges" sanitize:"multiline"`
+	WhatILearned *string  `json:"whatILearned" sanitize:"multiline"`
 	Featured     bool     `json:"featured"`
 }
 
 type ProjectUpdate struct {
-	Name         *string   `json:"name"`
-	Description  *string   `json:"description"`
-	Technologies *[]string `json:"technologies"`
-	GithubLink   *string   `json:"githubLink"`
-	Challenges   *string   `json:"challenges"`
-	WhatILearned *string   `json:"whatILearned"`
+	Name         *string   `json:"name" sanitize:"text" binding:"omitempty,max=500"`
+	Description  *string   `json:"description" sanitize:"multiline"`
+	Technologies *[]string `json:"technologies" sanitize:"text" binding:"omitempty,max=50,dive,required,max=255"`
+	GithubLink   *string   `json:"githubLink" sanitize:"text" binding:"omitempty,max=2000"`
+	Challenges   *string   `json:"challenges" sanitize:"multiline"`
+	WhatILearned *string   `json:"whatILearned" sanitize:"multiline"`
 	Featured     *bool     `json:"featured"`
 }
 
@@ -128,13 +128,13 @@ type Comment struct {
 
 type CommentCreate struct {
 	ProjectID   *int64  `json:"projectId"`
-	ArticleSlug *string `json:"articleSlug"`
-	Type        string  `json:"type"`
-	Body        string  `json:"body"`
+	ArticleSlug *string `json:"articleSlug" sanitize:"text" binding:"omitempty,max=255"`
+	Type        string  `json:"type" binding:"required,oneof=critique suggestion feature_request"`
+	Body        string  `json:"body" sanitize:"multiline" binding:"required,max=2000"`
 }
 
 type CommentUpdate struct {
-	Body string `json:"body"`
+	Body string `json:"body" sanitize:"multiline" binding:"required,max=2000"`
 }
 
 // Identity is the current caller as resolved by EnsureIdentity: a real account,
@@ -150,13 +150,13 @@ type Identity struct {
 }
 
 type ProfileUpdate struct {
-	Name     *string `json:"name"`
-	ImageURL *string `json:"imageUrl"`
+	Name     *string `json:"name" sanitize:"text" binding:"omitempty,max=100"`
+	ImageURL *string `json:"imageUrl" binding:"omitempty,max=2000"`
 }
 
 type PasswordChange struct {
-	CurrentPassword string `json:"currentPassword"`
-	NewPassword     string `json:"newPassword"`
+	CurrentPassword string `json:"currentPassword" binding:"required,max=1024"`
+	NewPassword     string `json:"newPassword" binding:"required,min=8,maxbytes=72"`
 }
 
 type Photo struct {
@@ -166,14 +166,14 @@ type Photo struct {
 }
 
 type PhotoCreate struct {
-	PhotoURL  string `json:"photoUrl"`
+	PhotoURL  string `json:"photoUrl" binding:"required,max=2000"`
 	ProjectID *int64 `json:"projectId"`
 }
 
 type Contact struct {
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Message string `json:"message"`
+	Name    string `json:"name" sanitize:"text" binding:"required,max=100"`
+	Email   string `json:"email" sanitize:"email" binding:"required,email,max=254"`
+	Message string `json:"message" sanitize:"multiline" binding:"required,max=2000"`
 }
 
 type ContactMessage struct {
@@ -232,18 +232,4 @@ func FromComment(comment domain.Comment, userName string, userImage *string) Com
 
 func Ptr[T any](value T) *T {
 	return &value
-}
-
-func PtrString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
-
-func PtrBool(value *bool) bool {
-	if value == nil {
-		return false
-	}
-	return *value
 }

@@ -83,6 +83,14 @@ func TestRouting(t *testing.T) {
 		{"comments invalid project id", http.MethodGet, "/portfolio/v1/comments/project/xyz", http.StatusBadRequest},
 		{"my-ratings requires auth", http.MethodGet, "/portfolio/v1/ratings/my-ratings", http.StatusUnauthorized},
 		{"delete photo requires auth", http.MethodDelete, "/portfolio/v1/photos/5", http.StatusUnauthorized},
+		{"create project requires auth", http.MethodPost, "/portfolio/v1/projects", http.StatusUnauthorized},
+		{"update project requires auth", http.MethodPut, "/portfolio/v1/projects/1", http.StatusUnauthorized},
+		{"delete project requires auth", http.MethodDelete, "/portfolio/v1/projects/1", http.StatusUnauthorized},
+		{"reset project ratings requires auth", http.MethodDelete, "/portfolio/v1/projects/1/ratings", http.StatusUnauthorized},
+		{"reset ratings alias requires auth", http.MethodDelete, "/portfolio/v1/ratings/project/1", http.StatusUnauthorized},
+		{"save project photo requires auth", http.MethodPost, "/portfolio/v1/photos/1", http.StatusUnauthorized},
+		{"admin users requires auth", http.MethodGet, "/portfolio/v1/admin/users", http.StatusUnauthorized},
+		{"admin comments requires auth", http.MethodGet, "/portfolio/v1/admin/comments", http.StatusUnauthorized},
 		{"admin contact requires auth", http.MethodGet, "/portfolio/v1/contact", http.StatusUnauthorized},
 	}
 

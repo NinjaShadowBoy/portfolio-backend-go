@@ -9,4 +9,5 @@ type Repositories interface {
 	Photos() PhotosRepository
 	Contacts() ContactsRepository
 	AnonymousTokens() AnonymousTokensRepository
+	Stats() StatsRepository
 }

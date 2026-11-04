@@ -64,3 +64,18 @@ func (r *repositories) UserExistsByEmail(ctx context.Context, email string) (boo
 	row, err := r.q.UserExistsByEmail(ctx, email)
 	return row, repositoryError(err)
 }
+
+func (r *repositories) CountUsersForAdmin(ctx context.Context, filter domain.UserFilter) (int32, error) {
+	row, err := r.q.CountUsersForAdmin(ctx, nullString(filter.Search), filter.IncludeAnonymous)
+	return row, repositoryError(err)
+}
+
+func (r *repositories) ListUsersForAdmin(ctx context.Context, filter domain.UserFilter) ([]domain.AdminUser, error) {
+	row, err := r.q.ListUsersForAdmin(ctx, nullString(filter.Search), filter.IncludeAnonymous, filter.Offset, filter.Limit)
+	return mapRows(row, fromListUsersForAdminRow), repositoryError(err)
+}
+
+func (r *repositories) UpdateUserRole(ctx context.Context, id int64, role string) (domain.User, error) {
+	row, err := r.q.UpdateUserRole(ctx, id, role)
+	return fromUser(row), repositoryError(err)
+}

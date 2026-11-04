@@ -11,6 +11,22 @@ import (
 	"time"
 )
 
+const countCommentsForAdmin = `-- name: CountCommentsForAdmin :one
+SELECT COUNT(*)::integer
+FROM comments c
+WHERE ($1::text IS NULL OR c.type = $1)
+  AND ($2::text IS NULL
+       OR ($2 = 'project' AND c.project_id IS NOT NULL)
+       OR ($2 = 'article' AND c.article_slug IS NOT NULL))
+`
+
+func (q *Queries) CountCommentsForAdmin(ctx context.Context, type_ sql.NullString, target sql.NullString) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countCommentsForAdmin, type_, target)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createComment = `-- name: CreateComment :one
 INSERT INTO comments (body, user_id, project_id, article_slug, type)
 VALUES ($1, $2, $3, $4, $5)
@@ -46,6 +62,20 @@ WHERE id = $1 AND user_id = $2
 
 func (q *Queries) DeleteComment(ctx context.Context, iD int64, userID int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteComment, iD, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteCommentByID = `-- name: DeleteCommentByID :execrows
+DELETE FROM comments
+WHERE id = $1
+`
+
+// Moderation delete: no owner check, the route is admin-only.
+func (q *Queries) DeleteCommentByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteCommentByID, id)
 	if err != nil {
 		return 0, err
 	}
@@ -155,8 +185,8 @@ type ListCommentsByProjectIDRow struct {
 	UserImage   sql.NullString `json:"userImage"`
 }
 
-func (q *Queries) ListCommentsByProjectID(ctx context.Context, projectID int64) ([]ListCommentsByProjectIDRow, error) {
-	rows, err := q.db.QueryContext(ctx, listCommentsByProjectID, projectID)
+func (q *Queries) ListCommentsByProjectID(ctx context.Context, dollar_1 int64) ([]ListCommentsByProjectIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCommentsByProjectID, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +244,80 @@ func (q *Queries) ListCommentsByUserID(ctx context.Context, userID int64) ([]Com
 			&i.UpdatedAt,
 			&i.Type,
 			&i.ArticleSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentsForAdmin = `-- name: ListCommentsForAdmin :many
+SELECT c.id, c.body, c.user_id, c.project_id, c.article_slug, c.type,
+       c.created_at, c.updated_at,
+       u.name AS user_name, u.image_url AS user_image, u.provider AS user_provider,
+       p.name AS project_name
+FROM comments c
+JOIN users u ON u.id = c.user_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE ($1::text IS NULL OR c.type = $1)
+  AND ($2::text IS NULL
+       OR ($2 = 'project' AND c.project_id IS NOT NULL)
+       OR ($2 = 'article' AND c.article_slug IS NOT NULL))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $4::integer OFFSET $3::integer
+`
+
+type ListCommentsForAdminRow struct {
+	ID           int64          `json:"id"`
+	Body         string         `json:"body"`
+	UserID       int64          `json:"userId"`
+	ProjectID    sql.NullInt64  `json:"projectId"`
+	ArticleSlug  sql.NullString `json:"articleSlug"`
+	Type         string         `json:"type"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
+	UserName     string         `json:"userName"`
+	UserImage    sql.NullString `json:"userImage"`
+	UserProvider string         `json:"userProvider"`
+	ProjectName  sql.NullString `json:"projectName"`
+}
+
+// Admin moderation feed: every comment on any target, optionally narrowed to
+// one feedback type or one target kind ('project' / 'article').
+func (q *Queries) ListCommentsForAdmin(ctx context.Context, type_ sql.NullString, target sql.NullString, rowOffset int32, rowLimit int32) ([]ListCommentsForAdminRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCommentsForAdmin,
+		type_,
+		target,
+		rowOffset,
+		rowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentsForAdminRow
+	for rows.Next() {
+		var i ListCommentsForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Body,
+			&i.UserID,
+			&i.ProjectID,
+			&i.ArticleSlug,
+			&i.Type,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UserName,
+			&i.UserImage,
+			&i.UserProvider,
+			&i.ProjectName,
 		); err != nil {
 			return nil, err
 		}

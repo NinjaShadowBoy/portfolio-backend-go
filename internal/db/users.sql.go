@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -20,6 +21,22 @@ WHERE name LIKE $1
 
 func (q *Queries) CountUsersByNamePrefix(ctx context.Context, name string) (int32, error) {
 	row := q.db.QueryRowContext(ctx, countUsersByNamePrefix, name)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countUsersForAdmin = `-- name: CountUsersForAdmin :one
+SELECT COUNT(*)::integer
+FROM users u
+WHERE ($1::text IS NULL
+       OR u.name ILIKE '%' || $1 || '%'
+       OR u.email ILIKE '%' || $1 || '%')
+  AND ($2::boolean OR u.provider <> 'ANON')
+`
+
+func (q *Queries) CountUsersForAdmin(ctx context.Context, search sql.NullString, includeAnonymous bool) (int32, error) {
+	row := q.db.QueryRowContext(ctx, countUsersForAdmin, search, includeAnonymous)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -194,6 +211,81 @@ func (q *Queries) GetUsersByIDs(ctx context.Context, dollar_1 []int64) ([]User, 
 	return items, nil
 }
 
+const listUsersForAdmin = `-- name: ListUsersForAdmin :many
+SELECT u.id, u.email, u.pwd, u.name, u.role, u.provider, u.provider_id, u.image_url, u.email_verified, u.last_login_at, u.created_at, u.updated_at,
+       (SELECT COUNT(*) FROM comments c WHERE c.user_id = u.id)::integer AS comment_count,
+       (SELECT COUNT(*) FROM ratings r WHERE r.user_id = u.id)::integer AS rating_count
+FROM users u
+WHERE ($1::text IS NULL
+       OR u.name ILIKE '%' || $1 || '%'
+       OR u.email ILIKE '%' || $1 || '%')
+  AND ($2::boolean OR u.provider <> 'ANON')
+ORDER BY u.created_at DESC, u.id DESC
+LIMIT $4::integer OFFSET $3::integer
+`
+
+type ListUsersForAdminRow struct {
+	ID            int64          `json:"id"`
+	Email         string         `json:"email"`
+	Pwd           sql.NullString `json:"pwd"`
+	Name          string         `json:"name"`
+	Role          string         `json:"role"`
+	Provider      string         `json:"provider"`
+	ProviderID    sql.NullString `json:"providerId"`
+	ImageUrl      sql.NullString `json:"imageUrl"`
+	EmailVerified bool           `json:"emailVerified"`
+	LastLoginAt   sql.NullTime   `json:"lastLoginAt"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
+	CommentCount  int32          `json:"commentCount"`
+	RatingCount   int32          `json:"ratingCount"`
+}
+
+// Admin listing: optional name/email search, anonymous identities hidden
+// unless asked for, newest first. Counts let the admin see activity per user.
+func (q *Queries) ListUsersForAdmin(ctx context.Context, search sql.NullString, includeAnonymous bool, rowOffset int32, rowLimit int32) ([]ListUsersForAdminRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersForAdmin,
+		search,
+		includeAnonymous,
+		rowOffset,
+		rowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersForAdminRow
+	for rows.Next() {
+		var i ListUsersForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Pwd,
+			&i.Name,
+			&i.Role,
+			&i.Provider,
+			&i.ProviderID,
+			&i.ImageUrl,
+			&i.EmailVerified,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CommentCount,
+			&i.RatingCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateUserLogin = `-- name: UpdateUserLogin :one
 UPDATE users
 SET last_login_at = $2
@@ -301,15 +393,16 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, iD int64, name sql.Null
 	return i, err
 }
 
-const updateUserProfilePhoto = `-- name: UpdateUserProfilePhoto :one
+const updateUserRole = `-- name: UpdateUserRole :one
 UPDATE users
-SET image_url = $2
+SET role = $2,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, email, pwd, name, role, provider, provider_id, image_url, email_verified, last_login_at, created_at, updated_at
 `
 
-func (q *Queries) UpdateUserProfilePhoto(ctx context.Context, iD int64, imageUrl sql.NullString) (User, error) {
-	row := q.db.QueryRowContext(ctx, updateUserProfilePhoto, iD, imageUrl)
+func (q *Queries) UpdateUserRole(ctx context.Context, iD int64, role string) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserRole, iD, role)
 	var i User
 	err := row.Scan(
 		&i.ID,

@@ -23,6 +23,7 @@ func (r *repositories) Comments() ports.CommentsRepository               { retur
 func (r *repositories) Photos() ports.PhotosRepository                   { return r }
 func (r *repositories) Contacts() ports.ContactsRepository               { return r }
 func (r *repositories) AnonymousTokens() ports.AnonymousTokensRepository { return r }
+func (r *repositories) Stats() ports.StatsRepository                     { return r }
 
 func (s *Store) WithinTx(ctx context.Context, work func(ports.Repositories) error) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})

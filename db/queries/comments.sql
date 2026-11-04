@@ -49,3 +49,33 @@ WHERE id = $1 AND user_id = $2;
 UPDATE comments
 SET user_id = $1
 WHERE user_id = $2;
+
+-- Admin moderation feed: every comment on any target, optionally narrowed to
+-- one feedback type or one target kind ('project' / 'article').
+-- name: ListCommentsForAdmin :many
+SELECT c.id, c.body, c.user_id, c.project_id, c.article_slug, c.type,
+       c.created_at, c.updated_at,
+       u.name AS user_name, u.image_url AS user_image, u.provider AS user_provider,
+       p.name AS project_name
+FROM comments c
+JOIN users u ON u.id = c.user_id
+LEFT JOIN projects p ON p.id = c.project_id
+WHERE (sqlc.narg('type')::text IS NULL OR c.type = sqlc.narg('type'))
+  AND (sqlc.narg('target')::text IS NULL
+       OR (sqlc.narg('target') = 'project' AND c.project_id IS NOT NULL)
+       OR (sqlc.narg('target') = 'article' AND c.article_slug IS NOT NULL))
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT sqlc.arg('row_limit')::integer OFFSET sqlc.arg('row_offset')::integer;
+
+-- name: CountCommentsForAdmin :one
+SELECT COUNT(*)::integer
+FROM comments c
+WHERE (sqlc.narg('type')::text IS NULL OR c.type = sqlc.narg('type'))
+  AND (sqlc.narg('target')::text IS NULL
+       OR (sqlc.narg('target') = 'project' AND c.project_id IS NOT NULL)
+       OR (sqlc.narg('target') = 'article' AND c.article_slug IS NOT NULL));
+
+-- Moderation delete: no owner check, the route is admin-only.
+-- name: DeleteCommentByID :execrows
+DELETE FROM comments
+WHERE id = $1;

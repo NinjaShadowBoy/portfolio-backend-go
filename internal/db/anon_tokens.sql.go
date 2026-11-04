@@ -19,16 +19,6 @@ func (q *Queries) CreateAnonToken(ctx context.Context, tokenHash string, userID 
 	return err
 }
 
-const deleteAnonTokensByUserID = `-- name: DeleteAnonTokensByUserID :exec
-DELETE FROM anon_tokens
-WHERE user_id = $1
-`
-
-func (q *Queries) DeleteAnonTokensByUserID(ctx context.Context, userID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteAnonTokensByUserID, userID)
-	return err
-}
-
 const getUserByAnonToken = `-- name: GetUserByAnonToken :one
 SELECT u.id, u.email, u.pwd, u.name, u.role, u.provider, u.provider_id,
        u.image_url, u.email_verified, u.last_login_at, u.created_at, u.updated_at

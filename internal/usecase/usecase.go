@@ -76,6 +76,12 @@ type Service interface {
 	UpdateProfile(ctx context.Context, userID int64, req dto.ProfileUpdate) (dto.User, error)
 	ChangePassword(ctx context.Context, userID int64, req dto.PasswordChange) error
 	DeleteAccount(ctx context.Context, userID int64) error
+	GetAdminStats(ctx context.Context) (dto.AdminStats, error)
+	ListUsersForAdmin(ctx context.Context, query dto.AdminUserQuery) (dto.Page[dto.AdminUser], error)
+	UpdateUserRole(ctx context.Context, actorID, userID int64, role string) (dto.User, error)
+	DeleteUserAsAdmin(ctx context.Context, actorID, userID int64) error
+	ListCommentsForAdmin(ctx context.Context, query dto.AdminCommentQuery) (dto.Page[dto.AdminComment], error)
+	DeleteCommentAsAdmin(ctx context.Context, id int64) error
 }
 
 // Dependencies are supplied by the composition root. Use cases never construct adapters.

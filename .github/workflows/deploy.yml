@@ -129,5 +129,5 @@ jobs:
             -e "ansible_host=${{ secrets.VPS_HOST }}" \
             -e "ansible_user=${{ secrets.VPS_USER }}" \
             -e "target_env=${{ env.DEPLOY_ENV }}" \
-            -e "app=backend" \
+            -e "app=portfolio" -e "service=backend" \
             -e "backend_image_tag=${{ needs.build.outputs.tag }}"

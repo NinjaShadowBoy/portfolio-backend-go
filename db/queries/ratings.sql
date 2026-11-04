@@ -56,13 +56,6 @@ SET user_id = $1
 WHERE r.user_id = $2
   AND r.project_id NOT IN (SELECT existing.project_id FROM ratings AS existing WHERE existing.user_id = $1);
 
--- name: RatingExistsByUserProject :one
-SELECT EXISTS (
-    SELECT 1
-    FROM ratings
-    WHERE user_id = $1 AND project_id = $2
-);
-
 -- name: RatingCountByProjectID :one
 SELECT COUNT(*)::integer
 FROM ratings

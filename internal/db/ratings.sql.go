@@ -291,21 +291,6 @@ func (q *Queries) RatingDistributionByProjectID(ctx context.Context, projectID i
 	return items, nil
 }
 
-const ratingExistsByUserProject = `-- name: RatingExistsByUserProject :one
-SELECT EXISTS (
-    SELECT 1
-    FROM ratings
-    WHERE user_id = $1 AND project_id = $2
-)
-`
-
-func (q *Queries) RatingExistsByUserProject(ctx context.Context, userID int64, projectID int64) (bool, error) {
-	row := q.db.QueryRowContext(ctx, ratingExistsByUserProject, userID, projectID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const reassignRatingsToUser = `-- name: ReassignRatingsToUser :exec
 UPDATE ratings AS r
 SET user_id = $1

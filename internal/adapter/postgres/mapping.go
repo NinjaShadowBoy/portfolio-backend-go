@@ -40,11 +40,22 @@ func fromListCommentsByProjectIDRow(row db.ListCommentsByProjectIDRow) domain.Co
 	}
 }
 
-func fromAnonToken(row db.AnonToken) domain.AnonToken {
-	return domain.AnonToken{
-		TokenHash: row.TokenHash,
-		UserID:    row.UserID,
-		CreatedAt: row.CreatedAt,
+func fromListCommentsForAdminRow(row db.ListCommentsForAdminRow) domain.AdminComment {
+	return domain.AdminComment{
+		CommentWithAuthor: domain.CommentWithAuthor{
+			ID:          row.ID,
+			Body:        row.Body,
+			UserID:      row.UserID,
+			ProjectID:   int64Ptr(row.ProjectID),
+			ArticleSlug: stringPtr(row.ArticleSlug),
+			Type:        row.Type,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+			UserName:    row.UserName,
+			UserImage:   stringPtr(row.UserImage),
+		},
+		UserProvider: row.UserProvider,
+		ProjectName:  stringPtr(row.ProjectName),
 	}
 }
 
@@ -129,6 +140,27 @@ func fromUser(row db.User) domain.User {
 		LastLoginAt:   timePtr(row.LastLoginAt),
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
+	}
+}
+
+func fromListUsersForAdminRow(row db.ListUsersForAdminRow) domain.AdminUser {
+	return domain.AdminUser{
+		User: fromUser(db.User{
+			ID:            row.ID,
+			Email:         row.Email,
+			Pwd:           row.Pwd,
+			Name:          row.Name,
+			Role:          row.Role,
+			Provider:      row.Provider,
+			ProviderID:    row.ProviderID,
+			ImageUrl:      row.ImageUrl,
+			EmailVerified: row.EmailVerified,
+			LastLoginAt:   row.LastLoginAt,
+			CreatedAt:     row.CreatedAt,
+			UpdatedAt:     row.UpdatedAt,
+		}),
+		CommentCount: row.CommentCount,
+		RatingCount:  row.RatingCount,
 	}
 }
 

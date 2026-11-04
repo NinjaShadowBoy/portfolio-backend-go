@@ -35,42 +35,6 @@ func (q *Queries) DeletePhoto(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected()
 }
 
-const listOrphanProfilePhotos = `-- name: ListOrphanProfilePhotos :many
-SELECT id, photo_url, project_id, created_at, updated_at
-FROM photos
-WHERE project_id IS NULL
-ORDER BY created_at DESC, id DESC
-`
-
-func (q *Queries) ListOrphanProfilePhotos(ctx context.Context) ([]Photo, error) {
-	rows, err := q.db.QueryContext(ctx, listOrphanProfilePhotos)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Photo
-	for rows.Next() {
-		var i Photo
-		if err := rows.Scan(
-			&i.ID,
-			&i.PhotoUrl,
-			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listPhotosByProjectID = `-- name: ListPhotosByProjectID :many
 SELECT id, photo_url, project_id, created_at, updated_at
 FROM photos

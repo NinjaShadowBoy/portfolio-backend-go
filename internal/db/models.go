@@ -45,17 +45,20 @@ type Photo struct {
 }
 
 type Project struct {
-	ID           int64          `json:"id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description"`
-	Featured     bool           `json:"featured"`
-	GithubLink   sql.NullString `json:"githubLink"`
-	Challenges   sql.NullString `json:"challenges"`
-	WhatILearned sql.NullString `json:"whatILearned"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
-	DemoLink     sql.NullString `json:"demoLink"`
-	DisplayOrder int32          `json:"displayOrder"`
+	ID             int64          `json:"id"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Featured       bool           `json:"featured"`
+	GithubLink     sql.NullString `json:"githubLink"`
+	Challenges     sql.NullString `json:"challenges"`
+	WhatILearned   sql.NullString `json:"whatILearned"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DemoLink       sql.NullString `json:"demoLink"`
+	DisplayOrder   int32          `json:"displayOrder"`
+	DescriptionFr  sql.NullString `json:"descriptionFr"`
+	ChallengesFr   sql.NullString `json:"challengesFr"`
+	WhatILearnedFr sql.NullString `json:"whatILearnedFr"`
 }
 
 type ProjectTechnology struct {

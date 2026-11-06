@@ -104,6 +104,8 @@ func (s *UseCases) createProject(ctx context.Context, req dto.ProjectCreate) (dt
 		Name: req.Name, Description: req.Description, Featured: req.Featured,
 		GithubLink: req.GithubLink, DemoLink: nonEmptyString(req.DemoLink),
 		Challenges: req.Challenges, WhatILearned: req.WhatILearned,
+		DescriptionFr: nonEmptyString(req.DescriptionFr), ChallengesFr: nonEmptyString(req.ChallengesFr),
+		WhatILearnedFr: nonEmptyString(req.WhatILearnedFr),
 	})
 	if err != nil {
 		return dto.Project{}, err
@@ -145,6 +147,16 @@ func (s *UseCases) updateProject(ctx context.Context, id int64, req dto.ProjectU
 	if req.WhatILearned != nil {
 		existing.WhatILearned = req.WhatILearned
 	}
+	// An empty string removes a translation, so the column holds NULL.
+	if req.DescriptionFr != nil {
+		existing.DescriptionFr = nonEmptyString(req.DescriptionFr)
+	}
+	if req.ChallengesFr != nil {
+		existing.ChallengesFr = nonEmptyString(req.ChallengesFr)
+	}
+	if req.WhatILearnedFr != nil {
+		existing.WhatILearnedFr = nonEmptyString(req.WhatILearnedFr)
+	}
 
 	_, err = s.repos.Projects().UpdateProject(ctx, existing)
 	if err != nil {
@@ -177,22 +189,25 @@ func assembleProjectDTO(project domain.Project, technologies []string, photos []
 	}
 
 	return dto.Project{
-		ID:            project.ID,
-		Name:          project.Name,
-		Description:   project.Description,
-		Technologies:  technologies,
-		GithubLink:    project.GithubLink,
-		DemoLink:      project.DemoLink,
-		Challenges:    project.Challenges,
-		WhatILearned:  project.WhatILearned,
-		Featured:      project.Featured,
-		DisplayOrder:  int(project.DisplayOrder),
-		CreatedAt:     project.CreatedAt,
-		UpdatedAt:     project.UpdatedAt,
-		AverageRating: agg.Average,
-		TotalRatings:  agg.Count,
-		PhotoUrls:     photoURLs,
-		Photos:        photoDTOs,
+		ID:             project.ID,
+		Name:           project.Name,
+		Description:    project.Description,
+		Technologies:   technologies,
+		GithubLink:     project.GithubLink,
+		DemoLink:       project.DemoLink,
+		Challenges:     project.Challenges,
+		WhatILearned:   project.WhatILearned,
+		DescriptionFr:  project.DescriptionFr,
+		ChallengesFr:   project.ChallengesFr,
+		WhatILearnedFr: project.WhatILearnedFr,
+		Featured:       project.Featured,
+		DisplayOrder:   int(project.DisplayOrder),
+		CreatedAt:      project.CreatedAt,
+		UpdatedAt:      project.UpdatedAt,
+		AverageRating:  agg.Average,
+		TotalRatings:   agg.Count,
+		PhotoUrls:      photoURLs,
+		Photos:         photoDTOs,
 	}
 }
 

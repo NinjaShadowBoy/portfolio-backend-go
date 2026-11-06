@@ -58,22 +58,26 @@ type DeviceStatusResponse struct {
 }
 
 type Project struct {
-	ID            int64     `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	Technologies  []string  `json:"technologies"`
-	GithubLink    *string   `json:"githubLink"`
-	DemoLink      *string   `json:"demoLink"`
-	Challenges    *string   `json:"challenges"`
-	WhatILearned  *string   `json:"whatILearned"`
-	Featured      bool      `json:"featured"`
-	DisplayOrder  int       `json:"displayOrder"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	AverageRating float64   `json:"averageRating"`
-	TotalRatings  int       `json:"totalRatings"`
-	PhotoUrls     []string  `json:"photoUrls"`
-	Photos        []Photo   `json:"photos"`
+	ID           int64    `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Technologies []string `json:"technologies"`
+	GithubLink   *string  `json:"githubLink"`
+	DemoLink     *string  `json:"demoLink"`
+	Challenges   *string  `json:"challenges"`
+	WhatILearned *string  `json:"whatILearned"`
+	// French versions; null when not translated, and the client falls back to English.
+	DescriptionFr  *string   `json:"descriptionFr"`
+	ChallengesFr   *string   `json:"challengesFr"`
+	WhatILearnedFr *string   `json:"whatILearnedFr"`
+	Featured       bool      `json:"featured"`
+	DisplayOrder   int       `json:"displayOrder"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	AverageRating  float64   `json:"averageRating"`
+	TotalRatings   int       `json:"totalRatings"`
+	PhotoUrls      []string  `json:"photoUrls"`
+	Photos         []Photo   `json:"photos"`
 }
 
 type ProjectCreate struct {
@@ -84,7 +88,11 @@ type ProjectCreate struct {
 	DemoLink     *string  `json:"demoLink" sanitize:"text" binding:"omitempty,http_url_or_empty,max=2000"`
 	Challenges   *string  `json:"challenges" sanitize:"multiline"`
 	WhatILearned *string  `json:"whatILearned" sanitize:"multiline"`
-	Featured     bool     `json:"featured"`
+	// French versions; empty or absent means not translated.
+	DescriptionFr  *string `json:"descriptionFr" sanitize:"multiline"`
+	ChallengesFr   *string `json:"challengesFr" sanitize:"multiline"`
+	WhatILearnedFr *string `json:"whatILearnedFr" sanitize:"multiline"`
+	Featured       bool    `json:"featured"`
 }
 
 type ProjectUpdate struct {
@@ -95,7 +103,11 @@ type ProjectUpdate struct {
 	DemoLink     *string   `json:"demoLink" sanitize:"text" binding:"omitempty,http_url_or_empty,max=2000"`
 	Challenges   *string   `json:"challenges" sanitize:"multiline"`
 	WhatILearned *string   `json:"whatILearned" sanitize:"multiline"`
-	Featured     *bool     `json:"featured"`
+	// French versions; an empty string removes the translation.
+	DescriptionFr  *string `json:"descriptionFr" sanitize:"multiline"`
+	ChallengesFr   *string `json:"challengesFr" sanitize:"multiline"`
+	WhatILearnedFr *string `json:"whatILearnedFr" sanitize:"multiline"`
+	Featured       *bool   `json:"featured"`
 }
 
 // ProjectOrder is the body of PUT /projects/order. IDs lists project ids in

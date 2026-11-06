@@ -127,3 +127,35 @@ func TestGetProjectReturnsDisplayOrder(t *testing.T) {
 		t.Fatalf("displayOrder = %d, want 1", project.DisplayOrder)
 	}
 }
+
+func TestFrenchContentRoundTrip(t *testing.T) {
+	store := newStore()
+	svc := newUseCases(store)
+	ctx := context.Background()
+
+	project, err := svc.UpdateProject(ctx, 1, dto.ProjectUpdate{
+		DescriptionFr:  dto.Ptr("Une description."),
+		WhatILearnedFr: dto.Ptr("Les embeddings."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.DescriptionFr == nil || *project.DescriptionFr != "Une description." {
+		t.Fatalf("descriptionFr after set = %v", project.DescriptionFr)
+	}
+	if project.ChallengesFr != nil {
+		t.Fatalf("challengesFr was not sent but is %v", *project.ChallengesFr)
+	}
+
+	// An empty string removes the translation instead of storing "".
+	cleared, err := svc.UpdateProject(ctx, 1, dto.ProjectUpdate{DescriptionFr: dto.Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.DescriptionFr != nil || store.state.projects[1].DescriptionFr != nil {
+		t.Fatalf("empty descriptionFr was stored as %v", store.state.projects[1].DescriptionFr)
+	}
+	if cleared.WhatILearnedFr == nil {
+		t.Fatal("whatILearnedFr was dropped by an update that did not send it")
+	}
+}

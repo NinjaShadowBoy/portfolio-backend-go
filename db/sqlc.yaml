@@ -11,4 +11,4 @@ sql:
         emit_db_tags: false
         emit_json_tags: true
         json_tags_case_style: camel
-        query_parameter_limit: 8
+        query_parameter_limit: 12

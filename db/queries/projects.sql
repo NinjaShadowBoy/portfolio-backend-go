@@ -10,8 +10,9 @@ WHERE id = $1
 LIMIT 1;
 
 -- name: CreateProject :one
-INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned, demo_link, display_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7,
+INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned, demo_link,
+                      description_fr, challenges_fr, what_i_learned_fr, display_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         (SELECT COALESCE(MAX(display_order), -1) + 1 FROM projects))
 RETURNING *;
 
@@ -24,6 +25,9 @@ SET name = COALESCE($2::varchar(500), name),
     challenges = $6,
     what_i_learned = $7,
     demo_link = $8,
+    description_fr = $9,
+    challenges_fr = $10,
+    what_i_learned_fr = $11,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;

@@ -59,6 +59,10 @@ type Project struct {
 	DemoLink     *string
 	Challenges   *string
 	WhatILearned *string
+	// French versions of the text above; nil when not translated.
+	DescriptionFr  *string
+	ChallengesFr   *string
+	WhatILearnedFr *string
 	// DisplayOrder is the admin-chosen position in listings. Lower comes first.
 	DisplayOrder int32
 	CreatedAt    time.Time

@@ -13,13 +13,14 @@ import (
 )
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned, demo_link, display_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7,
+INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned, demo_link,
+                      description_fr, challenges_fr, what_i_learned_fr, display_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         (SELECT COALESCE(MAX(display_order), -1) + 1 FROM projects))
-RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order
+RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order, description_fr, challenges_fr, what_i_learned_fr
 `
 
-func (q *Queries) CreateProject(ctx context.Context, name string, description string, featured bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString, demoLink sql.NullString) (Project, error) {
+func (q *Queries) CreateProject(ctx context.Context, name string, description string, featured bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString, demoLink sql.NullString, descriptionFr sql.NullString, challengesFr sql.NullString, whatILearnedFr sql.NullString) (Project, error) {
 	row := q.db.QueryRowContext(ctx, createProject,
 		name,
 		description,
@@ -28,6 +29,9 @@ func (q *Queries) CreateProject(ctx context.Context, name string, description st
 		challenges,
 		whatILearned,
 		demoLink,
+		descriptionFr,
+		challengesFr,
+		whatILearnedFr,
 	)
 	var i Project
 	err := row.Scan(
@@ -42,6 +46,9 @@ func (q *Queries) CreateProject(ctx context.Context, name string, description st
 		&i.UpdatedAt,
 		&i.DemoLink,
 		&i.DisplayOrder,
+		&i.DescriptionFr,
+		&i.ChallengesFr,
+		&i.WhatILearnedFr,
 	)
 	return i, err
 }
@@ -67,7 +74,7 @@ func (q *Queries) DeleteProjectTechnologies(ctx context.Context, projectID int64
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order
+SELECT id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order, description_fr, challenges_fr, what_i_learned_fr
 FROM projects
 WHERE id = $1
 LIMIT 1
@@ -88,6 +95,9 @@ func (q *Queries) GetProject(ctx context.Context, id int64) (Project, error) {
 		&i.UpdatedAt,
 		&i.DemoLink,
 		&i.DisplayOrder,
+		&i.DescriptionFr,
+		&i.ChallengesFr,
+		&i.WhatILearnedFr,
 	)
 	return i, err
 }
@@ -162,7 +172,7 @@ func (q *Queries) ListProjectIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order
+SELECT id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order, description_fr, challenges_fr, what_i_learned_fr
 FROM projects
 ORDER BY display_order ASC, created_at DESC, id DESC
 `
@@ -188,6 +198,9 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.UpdatedAt,
 			&i.DemoLink,
 			&i.DisplayOrder,
+			&i.DescriptionFr,
+			&i.ChallengesFr,
+			&i.WhatILearnedFr,
 		); err != nil {
 			return nil, err
 		}
@@ -267,12 +280,15 @@ SET name = COALESCE($2::varchar(500), name),
     challenges = $6,
     what_i_learned = $7,
     demo_link = $8,
+    description_fr = $9,
+    challenges_fr = $10,
+    what_i_learned_fr = $11,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order
+RETURNING id, name, description, featured, github_link, challenges, what_i_learned, created_at, updated_at, demo_link, display_order, description_fr, challenges_fr, what_i_learned_fr
 `
 
-func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, column3 string, column4 bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString, demoLink sql.NullString) (Project, error) {
+func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, column3 string, column4 bool, githubLink sql.NullString, challenges sql.NullString, whatILearned sql.NullString, demoLink sql.NullString, descriptionFr sql.NullString, challengesFr sql.NullString, whatILearnedFr sql.NullString) (Project, error) {
 	row := q.db.QueryRowContext(ctx, updateProject,
 		iD,
 		column2,
@@ -282,6 +298,9 @@ func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, c
 		challenges,
 		whatILearned,
 		demoLink,
+		descriptionFr,
+		challengesFr,
+		whatILearnedFr,
 	)
 	var i Project
 	err := row.Scan(
@@ -296,6 +315,9 @@ func (q *Queries) UpdateProject(ctx context.Context, iD int64, column2 string, c
 		&i.UpdatedAt,
 		&i.DemoLink,
 		&i.DisplayOrder,
+		&i.DescriptionFr,
+		&i.ChallengesFr,
+		&i.WhatILearnedFr,
 	)
 	return i, err
 }

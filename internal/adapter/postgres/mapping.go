@@ -96,17 +96,20 @@ func fromPhoto(row db.Photo) domain.Photo {
 
 func fromProject(row db.Project) domain.Project {
 	return domain.Project{
-		ID:           row.ID,
-		Name:         row.Name,
-		Description:  row.Description,
-		Featured:     row.Featured,
-		GithubLink:   stringPtr(row.GithubLink),
-		DemoLink:     stringPtr(row.DemoLink),
-		Challenges:   stringPtr(row.Challenges),
-		WhatILearned: stringPtr(row.WhatILearned),
-		DisplayOrder: row.DisplayOrder,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:             row.ID,
+		Name:           row.Name,
+		Description:    row.Description,
+		Featured:       row.Featured,
+		GithubLink:     stringPtr(row.GithubLink),
+		DemoLink:       stringPtr(row.DemoLink),
+		Challenges:     stringPtr(row.Challenges),
+		WhatILearned:   stringPtr(row.WhatILearned),
+		DescriptionFr:  stringPtr(row.DescriptionFr),
+		ChallengesFr:   stringPtr(row.ChallengesFr),
+		WhatILearnedFr: stringPtr(row.WhatILearnedFr),
+		DisplayOrder:   row.DisplayOrder,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
 	}
 }
 

@@ -41,6 +41,13 @@ func init() {
 			limit, err := strconv.Atoi(fl.Param())
 			return err == nil && len(fl.Field().String()) <= limit
 		})
+		// http_url_or_empty accepts "" so an empty string can clear a link. With
+		// omitempty, a non-nil *string holding "" still runs the tags after it,
+		// so http_url alone would reject the clear.
+		_ = v.RegisterValidation("http_url_or_empty", func(fl validator.FieldLevel) bool {
+			value := fl.Field().String()
+			return value == "" || v.Var(value, "http_url") == nil
+		})
 	}
 }
 

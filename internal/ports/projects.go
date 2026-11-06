@@ -13,8 +13,10 @@ type ProjectsRepository interface {
 	GetProject(ctx context.Context, id int64) (domain.Project, error)
 	InsertProjectTechnologies(ctx context.Context, projectID int64, technologies []string) error
 	ListAllTechnologiesByProjectID(ctx context.Context, ids []int64) ([]domain.ProjectTechnology, error)
+	ListProjectIDs(ctx context.Context) ([]int64, error)
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 	ListTechnologiesByProjectID(ctx context.Context, projectID int64) ([]string, error)
 	ProjectExists(ctx context.Context, id int64) (bool, error)
+	SetProjectDisplayOrder(ctx context.Context, id int64, order int32) error
 	UpdateProject(ctx context.Context, project domain.Project) (domain.Project, error)
 }

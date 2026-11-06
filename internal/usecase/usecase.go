@@ -42,6 +42,7 @@ type Service interface {
 	CreateProject(ctx context.Context, req dto.ProjectCreate) (dto.Project, error)
 	UpdateProject(ctx context.Context, id int64, req dto.ProjectUpdate) (dto.Project, error)
 	DeleteProject(ctx context.Context, id int64) error
+	ReorderProjects(ctx context.Context, ids []int64) error
 	GetProjectRatings(ctx context.Context, projectID int64) ([]dto.Rating, error)
 	GetProjectAverageRating(ctx context.Context, projectID int64) (float64, error)
 	GetProjectRatingCount(ctx context.Context, projectID int64) (int, error)

@@ -116,6 +116,7 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	// Content writes. These were registered on the public group and needed no
 	// login at all; every one of them is an admin action.
 	admin.POST("/projects", h.CreateProject)
+	admin.PUT("/projects/order", h.ReorderProjects)
 	admin.PUT("/projects/:id", h.UpdateProject)
 	admin.DELETE("/projects/:id", h.DeleteProject)
 	admin.DELETE("/projects/:id/ratings", h.DeleteProjectRatings)

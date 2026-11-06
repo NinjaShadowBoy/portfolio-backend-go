@@ -54,6 +54,8 @@ type Project struct {
 	WhatILearned sql.NullString `json:"whatILearned"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`
+	DemoLink     sql.NullString `json:"demoLink"`
+	DisplayOrder int32          `json:"displayOrder"`
 }
 
 type ProjectTechnology struct {

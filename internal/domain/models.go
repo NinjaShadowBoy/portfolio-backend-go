@@ -56,8 +56,11 @@ type Project struct {
 	Description  string
 	Featured     bool
 	GithubLink   *string
+	DemoLink     *string
 	Challenges   *string
 	WhatILearned *string
+	// DisplayOrder is the admin-chosen position in listings. Lower comes first.
+	DisplayOrder int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

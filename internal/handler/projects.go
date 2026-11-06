@@ -70,3 +70,15 @@ func (h *api) DeleteProject(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+func (h *api) ReorderProjects(c *gin.Context) {
+	var req dto.ProjectOrder
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.svc.ReorderProjects(c.Request.Context(), req.IDs); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

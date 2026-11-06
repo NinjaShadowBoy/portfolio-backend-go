@@ -101,8 +101,10 @@ func fromProject(row db.Project) domain.Project {
 		Description:  row.Description,
 		Featured:     row.Featured,
 		GithubLink:   stringPtr(row.GithubLink),
+		DemoLink:     stringPtr(row.DemoLink),
 		Challenges:   stringPtr(row.Challenges),
 		WhatILearned: stringPtr(row.WhatILearned),
+		DisplayOrder: row.DisplayOrder,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 	}

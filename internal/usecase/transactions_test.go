@@ -152,6 +152,22 @@ func (r *memoryRepos) InsertProjectTechnologies(_ context.Context, id int64, val
 	r.state.technologies[id] = slices.Clone(values)
 	return nil
 }
+func (r *memoryRepos) ListProjectIDs(context.Context) ([]int64, error) {
+	ids := make([]int64, 0, len(r.state.projects))
+	for id := range r.state.projects {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+func (r *memoryRepos) SetProjectDisplayOrder(_ context.Context, id int64, order int32) error {
+	if err := r.write("set-display-order"); err != nil {
+		return err
+	}
+	project := r.state.projects[id]
+	project.DisplayOrder = order
+	r.state.projects[id] = project
+	return nil
+}
 func (r *memoryRepos) ListTechnologiesByProjectID(_ context.Context, id int64) ([]string, error) {
 	return r.state.technologies[id], nil
 }
@@ -273,6 +289,7 @@ func TestMultiWriteUseCasesRollBack(t *testing.T) {
 			return err
 		}},
 		{"project delete", "delete-project", func(s usecase.Service) error { return s.DeleteProject(context.Background(), 1) }},
+		{"project reorder", "set-display-order", func(s usecase.Service) error { return s.ReorderProjects(context.Background(), []int64{1}) }},
 		{"anonymous identity", "create-token", func(s usecase.Service) error {
 			id, token, err := s.CreateAnonymousUser(context.Background())
 			if id != 0 || token != "" {

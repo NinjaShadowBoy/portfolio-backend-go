@@ -1,7 +1,7 @@
 -- name: ListProjects :many
 SELECT *
 FROM projects
-ORDER BY created_at DESC, id DESC;
+ORDER BY display_order ASC, created_at DESC, id DESC;
 
 -- name: GetProject :one
 SELECT *
@@ -10,8 +10,9 @@ WHERE id = $1
 LIMIT 1;
 
 -- name: CreateProject :one
-INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO projects (name, description, featured, github_link, challenges, what_i_learned, demo_link, display_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        (SELECT COALESCE(MAX(display_order), -1) + 1 FROM projects))
 RETURNING *;
 
 -- name: UpdateProject :one
@@ -22,9 +23,19 @@ SET name = COALESCE($2::varchar(500), name),
     github_link = $5,
     challenges = $6,
     what_i_learned = $7,
+    demo_link = $8,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
+
+-- name: ListProjectIDs :many
+SELECT id
+FROM projects;
+
+-- name: SetProjectDisplayOrder :exec
+UPDATE projects
+SET display_order = $2
+WHERE id = $1;
 
 -- name: DeleteProject :exec
 DELETE FROM projects

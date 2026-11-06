@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/domain"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/dto"
@@ -101,7 +102,8 @@ func (s *UseCases) GetProject(ctx context.Context, id int64) (dto.Project, error
 func (s *UseCases) createProject(ctx context.Context, req dto.ProjectCreate) (dto.Project, error) {
 	project, err := s.repos.Projects().CreateProject(ctx, domain.Project{
 		Name: req.Name, Description: req.Description, Featured: req.Featured,
-		GithubLink: req.GithubLink, Challenges: req.Challenges, WhatILearned: req.WhatILearned,
+		GithubLink: req.GithubLink, DemoLink: nonEmptyString(req.DemoLink),
+		Challenges: req.Challenges, WhatILearned: req.WhatILearned,
 	})
 	if err != nil {
 		return dto.Project{}, err
@@ -132,6 +134,10 @@ func (s *UseCases) updateProject(ctx context.Context, id int64, req dto.ProjectU
 	}
 	if req.GithubLink != nil {
 		existing.GithubLink = req.GithubLink
+	}
+	if req.DemoLink != nil {
+		// An empty string clears the link, so the column holds NULL, not "".
+		existing.DemoLink = nonEmptyString(req.DemoLink)
 	}
 	if req.Challenges != nil {
 		existing.Challenges = req.Challenges
@@ -176,9 +182,11 @@ func assembleProjectDTO(project domain.Project, technologies []string, photos []
 		Description:   project.Description,
 		Technologies:  technologies,
 		GithubLink:    project.GithubLink,
+		DemoLink:      project.DemoLink,
 		Challenges:    project.Challenges,
 		WhatILearned:  project.WhatILearned,
 		Featured:      project.Featured,
+		DisplayOrder:  int(project.DisplayOrder),
 		CreatedAt:     project.CreatedAt,
 		UpdatedAt:     project.UpdatedAt,
 		AverageRating: agg.Average,
@@ -220,4 +228,52 @@ func (s *UseCases) UpdateProject(ctx context.Context, id int64, req dto.ProjectU
 func (s *UseCases) DeleteProject(ctx context.Context, id int64) error {
 	_, err := inTransaction(ctx, s, func(tx *UseCases) (struct{}, error) { return struct{}{}, tx.deleteProject(ctx, id) })
 	return err
+}
+
+// ReorderProjects sets each project's displayOrder to its index in ids. Every id
+// must name an existing project, and no id may repeat. Projects left out of ids
+// keep their current displayOrder.
+func (s *UseCases) ReorderProjects(ctx context.Context, ids []int64) error {
+	_, err := inTransaction(ctx, s, func(tx *UseCases) (struct{}, error) { return struct{}{}, tx.reorderProjects(ctx, ids) })
+	return err
+}
+
+func (s *UseCases) reorderProjects(ctx context.Context, ids []int64) error {
+	known, err := s.repos.Projects().ListProjectIDs(ctx)
+	if err != nil {
+		return err
+	}
+	exists := make(map[int64]bool, len(known))
+	for _, id := range known {
+		exists[id] = true
+	}
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if !exists[id] {
+			return fmt.Errorf("project %d does not exist: %w", id, ErrBadRequest)
+		}
+		if seen[id] {
+			return fmt.Errorf("project %d is listed more than once: %w", id, ErrBadRequest)
+		}
+		seen[id] = true
+	}
+	// A partial list would leave the missing projects tied with listed ones.
+	if len(ids) != len(known) {
+		return fmt.Errorf("order must list all %d projects, got %d: %w", len(known), len(ids), ErrBadRequest)
+	}
+	for i, id := range ids {
+		if err := s.repos.Projects().SetProjectDisplayOrder(ctx, id, int32(i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nonEmptyString maps a missing or empty optional string to nil, so an empty
+// link is stored as NULL.
+func nonEmptyString(value *string) *string {
+	if value == nil || *value == "" {
+		return nil
+	}
+	return value
 }

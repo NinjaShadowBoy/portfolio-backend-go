@@ -63,9 +63,11 @@ type Project struct {
 	Description   string    `json:"description"`
 	Technologies  []string  `json:"technologies"`
 	GithubLink    *string   `json:"githubLink"`
+	DemoLink      *string   `json:"demoLink"`
 	Challenges    *string   `json:"challenges"`
 	WhatILearned  *string   `json:"whatILearned"`
 	Featured      bool      `json:"featured"`
+	DisplayOrder  int       `json:"displayOrder"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 	AverageRating float64   `json:"averageRating"`
@@ -79,6 +81,7 @@ type ProjectCreate struct {
 	Description  string   `json:"description" sanitize:"multiline" binding:"required"`
 	Technologies []string `json:"technologies" sanitize:"text" binding:"max=50,dive,required,max=255"`
 	GithubLink   *string  `json:"githubLink" sanitize:"text" binding:"omitempty,max=2000"`
+	DemoLink     *string  `json:"demoLink" sanitize:"text" binding:"omitempty,http_url_or_empty,max=2000"`
 	Challenges   *string  `json:"challenges" sanitize:"multiline"`
 	WhatILearned *string  `json:"whatILearned" sanitize:"multiline"`
 	Featured     bool     `json:"featured"`
@@ -89,9 +92,16 @@ type ProjectUpdate struct {
 	Description  *string   `json:"description" sanitize:"multiline"`
 	Technologies *[]string `json:"technologies" sanitize:"text" binding:"omitempty,max=50,dive,required,max=255"`
 	GithubLink   *string   `json:"githubLink" sanitize:"text" binding:"omitempty,max=2000"`
+	DemoLink     *string   `json:"demoLink" sanitize:"text" binding:"omitempty,http_url_or_empty,max=2000"`
 	Challenges   *string   `json:"challenges" sanitize:"multiline"`
 	WhatILearned *string   `json:"whatILearned" sanitize:"multiline"`
 	Featured     *bool     `json:"featured"`
+}
+
+// ProjectOrder is the body of PUT /projects/order. IDs lists project ids in
+// the order they should appear; each id's position becomes its displayOrder.
+type ProjectOrder struct {
+	IDs []int64 `json:"ids" binding:"required,min=1,dive,gt=0"`
 }
 
 type Rating struct {

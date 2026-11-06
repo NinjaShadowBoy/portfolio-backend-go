@@ -163,8 +163,8 @@ make fmt           # gofmt -w cmd internal
 make build         # static linux binary -> bin/portfolio-backend
 ```
 
-Deployment is a Docker image (`Dockerfile`) pushed to GHCR by CI and rolled
-out to the VPS with Ansible from the infra repo. Traces, metrics and logs go
+Deployment is a Docker image (`Dockerfile`) that CI builds, ships to the VPS
+over ssh and starts with `docker compose`. Traces, metrics and logs go
 to SigNoz over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. See
 [deploy/DEPLOY.md](deploy/DEPLOY.md).
 

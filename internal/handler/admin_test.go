@@ -21,6 +21,31 @@ type adminFakeService struct {
 	roleActor  int64
 	roleTarget int64
 	role       string
+	usageDays  int
+	usage      dto.ChatUsageReport
+	usageErr   error
+	knowledge  dto.KnowledgeStatus
+	reindex    dto.KnowledgeSyncStatus
+	reindexErr error
+}
+
+func (f *adminFakeService) ChatUsageReport(_ context.Context, days int) (dto.ChatUsageReport, error) {
+	f.usageDays = days
+	if f.usageErr != nil {
+		return dto.ChatUsageReport{}, f.usageErr
+	}
+	return f.usage, nil
+}
+
+func (f *adminFakeService) KnowledgeStatus(context.Context) (dto.KnowledgeStatus, error) {
+	return f.knowledge, nil
+}
+
+func (f *adminFakeService) ReindexKnowledgeNow(context.Context) (dto.KnowledgeSyncStatus, error) {
+	if f.reindexErr != nil {
+		return dto.KnowledgeSyncStatus{}, f.reindexErr
+	}
+	return f.reindex, nil
 }
 
 func (f *adminFakeService) ListUsersForAdmin(_ context.Context, query dto.AdminUserQuery) (dto.Page[dto.AdminUser], error) {

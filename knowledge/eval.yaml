@@ -1,0 +1,65 @@
+# Retrieval eval for the knowledge index (see README.md).
+# Format: a list of questions; expect lists "kind/ref" sources, any of which
+# counts as a hit when it is in the top 3 results. Keep to this subset of
+# YAML: the eval test parses it without a YAML library.
+questions:
+  - lang: en
+    q: Which architectures were compared for speech translation of tonal African languages?
+    expect: [publication/cerc2026-tonal]
+  - lang: en
+    q: What error categories were used to annotate the Igbo translations by hand?
+    expect: [publication/cerc2026-tonal]
+  - lang: en
+    q: How much did trimming silence improve Yoruba to English translation?
+    expect: [publication/cerc2026-audio]
+  - lang: en
+    q: Which audio preprocessing strategies were evaluated on field recordings?
+    expect: [publication/cerc2026-audio]
+  - lang: en
+    q: Which languages and datasets does the LinguoMT zero-shot benchmark cover?
+    expect: [publication/cerc2026-benchmark]
+  - lang: en
+    q: Why did Whisper produce empty outputs in the speech recognition experiments?
+    expect: [publication/cerc2026-benchmark, publication/cerc2026-audio, publication/cerc2026-tonal]
+  - lang: en
+    q: How was the AcadAI campus assistant evaluated with students?
+    expect: [publication/acadai]
+  - lang: en
+    q: Which vector database does the bilingual RAG assistant for universities use?
+    expect: [publication/acadai, cv/cv]
+  - lang: en
+    q: Where did Alex do his internship and what did he build there?
+    expect: [cv/cv, about/about]
+  - lang: en
+    q: What kind of internship is Alex looking for, and from when?
+    expect: [cv/cv, about/about]
+  - lang: fr
+    q: Quels modèles sont comparés pour la traduction vocale de l'igbo et du yoruba ?
+    expect: [publication/cerc2026-tonal, publication/cerc2026-benchmark]
+  - lang: fr
+    q: Quel gain de BLEU apporte le retrait des silences pour le yoruba ?
+    expect: [publication/cerc2026-audio]
+  - lang: fr
+    q: Quelles stratégies de prétraitement audio ont été testées ?
+    expect: [publication/cerc2026-audio]
+  - lang: fr
+    q: Sur quelles langues africaines porte le benchmark zero-shot LinguoMT ?
+    expect: [publication/cerc2026-benchmark]
+  - lang: fr
+    q: Combien d'étudiants ont participé à l'évaluation TAM de l'assistant AcadAI ?
+    expect: [publication/acadai, cv/cv]
+  - lang: fr
+    q: Quelle base vectorielle utilise l'assistant RAG bilingue pour les universités ?
+    expect: [publication/acadai, cv/cv]
+  - lang: fr
+    q: Où Alex fait-il ses études d'ingénieur ?
+    expect: [cv/cv, about/about]
+  - lang: fr
+    q: Quel stage Alex recherche-t-il ?
+    expect: [cv/cv, about/about]
+  - lang: fr
+    q: Quels sont les loisirs d'Alex ?
+    expect: [about/about]
+  - lang: fr
+    q: Quelles technologies backend Alex utilise-t-il au quotidien ?
+    expect: [about/about, cv/cv]

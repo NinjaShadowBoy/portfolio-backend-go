@@ -15,6 +15,14 @@ type AnonToken struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type ChatUsage struct {
+	Day          time.Time `json:"day"`
+	Subject      string    `json:"subject"`
+	Requests     int32     `json:"requests"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+}
+
 type Comment struct {
 	ID          int64          `json:"id"`
 	Body        string         `json:"body"`
@@ -36,12 +44,28 @@ type ContactMessage struct {
 	IsReplied   bool      `json:"isReplied"`
 }
 
+type KnowledgeChunk struct {
+	ID         int64       `json:"id"`
+	SourceKind string      `json:"sourceKind"`
+	SourceRef  string      `json:"sourceRef"`
+	Lang       string      `json:"lang"`
+	Title      string      `json:"title"`
+	Url        string      `json:"url"`
+	ChunkIndex int32       `json:"chunkIndex"`
+	Content    string      `json:"content"`
+	SourceHash string      `json:"sourceHash"`
+	Embedding  []byte      `json:"embedding"`
+	Tsv        interface{} `json:"tsv"`
+	UpdatedAt  time.Time   `json:"updatedAt"`
+}
+
 type Photo struct {
-	ID        int64         `json:"id"`
-	PhotoUrl  string        `json:"photoUrl"`
-	ProjectID sql.NullInt64 `json:"projectId"`
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
+	ID           int64         `json:"id"`
+	PhotoUrl     string        `json:"photoUrl"`
+	ProjectID    sql.NullInt64 `json:"projectId"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	UpdatedAt    time.Time     `json:"updatedAt"`
+	DisplayOrder int32         `json:"displayOrder"`
 }
 
 type Project struct {

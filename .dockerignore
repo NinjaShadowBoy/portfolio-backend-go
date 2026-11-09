@@ -10,3 +10,6 @@ deploy
 *.out
 coverage.*
 compose.yaml
+# *.md above matches only the context root; keep the corpus explicit.
+!knowledge/
+!knowledge/**/*.md

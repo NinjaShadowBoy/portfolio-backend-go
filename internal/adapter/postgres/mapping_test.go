@@ -25,6 +25,13 @@ func TestPersistenceNullsStayOutOfDomain(t *testing.T) {
 	}
 }
 
+func TestPhotoMappingKeepsDisplayOrder(t *testing.T) {
+	photo := fromPhoto(db.Photo{ID: 5, PhotoUrl: "https://example.com/p.jpg", ProjectID: sql.NullInt64{Int64: 3, Valid: true}, DisplayOrder: 4})
+	if photo.DisplayOrder != 4 || photo.ProjectID == nil || *photo.ProjectID != 3 || photo.ID != 5 {
+		t.Fatalf("photo mapping lost fields: %+v", photo)
+	}
+}
+
 func TestNumericAggregateMapping(t *testing.T) {
 	for _, value := range []any{float64(4.5), []byte("4.5"), "4.5"} {
 		if got := number(value); got != 4.5 {

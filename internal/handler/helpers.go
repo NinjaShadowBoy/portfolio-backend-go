@@ -55,8 +55,11 @@ func init() {
 // `sanitize`, then validates the `binding` tags. Sanitizing first means a
 // value that is only whitespace or markup fails `required`. gin's own JSON
 // binding validates while it decodes, so it cannot be used here.
-func bindJSON(c *gin.Context, dst any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes))
+func bindJSON(c *gin.Context, dst any) bool { return bindJSONLimit(c, dst, maxBodyBytes) }
+
+// bindJSONLimit is bindJSON with the body cap the endpoint needs.
+func bindJSONLimit(c *gin.Context, dst any, limit int64) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, limit))
 	if binding.EnableDecoderDisallowUnknownFields {
 		decoder.DisallowUnknownFields()
 	}

@@ -185,6 +185,14 @@ type Photo struct {
 	ID        int64  `json:"id"`
 	PhotoURL  string `json:"photoUrl"`
 	ProjectID int64  `json:"projectId"`
+	// DisplayOrder is the photo's position within its project, from 0.
+	DisplayOrder int `json:"displayOrder"`
+}
+
+// PhotoOrder is the body of PUT /projects/:id/photos/order. IDs lists every
+// photo of the project in the order they should appear; the first is the cover.
+type PhotoOrder struct {
+	IDs []int64 `json:"ids" binding:"required,min=1,dive,gt=0"`
 }
 
 type PhotoCreate struct {
@@ -212,6 +220,98 @@ type ContactResponse struct {
 	Success bool            `json:"success"`
 	Message string          `json:"message"`
 	Data    *ContactMessage `json:"data,omitempty"`
+}
+
+// ChatMessageInput is one turn of the visitor's conversation. The API takes
+// text only: tool calls and results never round-trip, so a client cannot forge
+// them.
+type ChatMessageInput struct {
+	Role string `json:"role" binding:"required,oneof=user assistant"`
+	Text string `json:"text" sanitize:"multiline" binding:"required,max=1000"`
+}
+
+// ChatRequest is the body of POST /chat. Messages are oldest first; the last
+// one must be from the user (checked by the use case).
+type ChatRequest struct {
+	Locale   string             `json:"locale" binding:"required,oneof=en fr"`
+	PagePath string             `json:"pagePath" sanitize:"text" binding:"max=200"`
+	Messages []ChatMessageInput `json:"messages" binding:"required,min=1,max=12,dive"`
+}
+
+// ChatConfigResponse is the body of GET /chat/config. RemainingToday is null
+// when the subject has no daily cap.
+type ChatConfigResponse struct {
+	Enabled        bool `json:"enabled"`
+	RemainingToday *int `json:"remainingToday"`
+}
+
+// ChatUsageDay is one day's global assistant usage ('*' subject). Day is UTC
+// as yyyy-mm-dd. Days in the range without traffic are reported with zeros.
+type ChatUsageDay struct {
+	Day          string `json:"day"`
+	Requests     int64  `json:"requests"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
+}
+
+// ChatUsageSubject is one visitor's usage over the range. Subject is already
+// hashed by the API ('ip:<hex>' or 'u:<userId>'), never a raw IP or email.
+type ChatUsageSubject struct {
+	Subject      string `json:"subject"`
+	Requests     int64  `json:"requests"`
+	InputTokens  int64  `json:"inputTokens"`
+	OutputTokens int64  `json:"outputTokens"`
+}
+
+// ChatBudget is the assistant's standing today. TokenBudget of 0 means no
+// global budget is configured (BudgetRemaining is then also 0).
+type ChatBudget struct {
+	Requests        int64 `json:"requests"`
+	Tokens          int64 `json:"tokens"`
+	TokenBudget     int64 `json:"tokenBudget"`
+	BudgetRemaining int64 `json:"budgetRemaining"`
+}
+
+// ChatUsageReport is the body of GET /admin/chat/usage.
+type ChatUsageReport struct {
+	Days        []ChatUsageDay     `json:"days"`
+	TopSubjects []ChatUsageSubject `json:"topSubjects"`
+	Today       ChatBudget         `json:"today"`
+}
+
+// KnowledgeSourceStatus is one indexed source as GET /admin/knowledge lists
+// it. UpdatedAt is the last change of any of its chunks.
+type KnowledgeSourceStatus struct {
+	Kind      string    `json:"kind"`
+	Ref       string    `json:"ref"`
+	Lang      string    `json:"lang"`
+	Title     string    `json:"title"`
+	URL       string    `json:"url"`
+	Chunks    int       `json:"chunks"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// KnowledgeSyncStatus summarises the last finished knowledge index sync,
+// whether it came from the background loop or an admin reindex. Added and
+// Updated count sources; Deleted counts chunk rows.
+type KnowledgeSyncStatus struct {
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	Added      int       `json:"added"`
+	Updated    int       `json:"updated"`
+	Deleted    int64     `json:"deleted"`
+	Unchanged  int       `json:"unchanged"`
+	// Error is the failure reason, or null when the sync succeeded.
+	Error *string `json:"error"`
+}
+
+// KnowledgeStatus is the body of GET /admin/knowledge. With enabled false,
+// Syncing is false and LastSync nil; Sources still lists what is stored.
+type KnowledgeStatus struct {
+	Enabled  bool                    `json:"enabled"`
+	Sources  []KnowledgeSourceStatus `json:"sources"`
+	LastSync *KnowledgeSyncStatus    `json:"lastSync"`
+	Syncing  bool                    `json:"syncing"`
 }
 
 type ErrorResponse struct {

@@ -36,10 +36,10 @@ func (q *Queries) DeletePhoto(ctx context.Context, id int64) (int64, error) {
 }
 
 const listPhotosByProjectID = `-- name: ListPhotosByProjectID :many
-SELECT id, photo_url, project_id, created_at, updated_at
+SELECT id, photo_url, project_id, created_at, updated_at, display_order
 FROM photos
 WHERE project_id = $1
-ORDER BY created_at DESC, id DESC
+ORDER BY display_order, id
 `
 
 func (q *Queries) ListPhotosByProjectID(ctx context.Context, projectID sql.NullInt64) ([]Photo, error) {
@@ -57,6 +57,7 @@ func (q *Queries) ListPhotosByProjectID(ctx context.Context, projectID sql.NullI
 			&i.ProjectID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DisplayOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -72,10 +73,10 @@ func (q *Queries) ListPhotosByProjectID(ctx context.Context, projectID sql.NullI
 }
 
 const listPhotosByProjectIDs = `-- name: ListPhotosByProjectIDs :many
-SELECT id, photo_url, project_id, created_at, updated_at
+SELECT id, photo_url, project_id, created_at, updated_at, display_order
 FROM photos
 WHERE project_id = ANY($1::bigint[])
-ORDER BY project_id, created_at DESC, id DESC
+ORDER BY project_id, display_order, id
 `
 
 func (q *Queries) ListPhotosByProjectIDs(ctx context.Context, dollar_1 []int64) ([]Photo, error) {
@@ -93,6 +94,7 @@ func (q *Queries) ListPhotosByProjectIDs(ctx context.Context, dollar_1 []int64) 
 			&i.ProjectID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DisplayOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -110,7 +112,7 @@ func (q *Queries) ListPhotosByProjectIDs(ctx context.Context, dollar_1 []int64) 
 const saveProfilePhoto = `-- name: SaveProfilePhoto :one
 INSERT INTO photos (photo_url, project_id)
 VALUES ($1, NULL)
-RETURNING id, photo_url, project_id, created_at, updated_at
+RETURNING id, photo_url, project_id, created_at, updated_at, display_order
 `
 
 func (q *Queries) SaveProfilePhoto(ctx context.Context, photoUrl string) (Photo, error) {
@@ -122,16 +124,19 @@ func (q *Queries) SaveProfilePhoto(ctx context.Context, photoUrl string) (Photo,
 		&i.ProjectID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayOrder,
 	)
 	return i, err
 }
 
 const saveProjectPhoto = `-- name: SaveProjectPhoto :one
-INSERT INTO photos (photo_url, project_id)
-VALUES ($1, $2)
-RETURNING id, photo_url, project_id, created_at, updated_at
+INSERT INTO photos (photo_url, project_id, display_order)
+VALUES ($1, $2,
+        (SELECT COALESCE(MAX(display_order), -1) + 1 FROM photos WHERE project_id = $2))
+RETURNING id, photo_url, project_id, created_at, updated_at, display_order
 `
 
+// A new photo goes after the project's existing photos.
 func (q *Queries) SaveProjectPhoto(ctx context.Context, photoUrl string, projectID sql.NullInt64) (Photo, error) {
 	row := q.db.QueryRowContext(ctx, saveProjectPhoto, photoUrl, projectID)
 	var i Photo
@@ -141,6 +146,23 @@ func (q *Queries) SaveProjectPhoto(ctx context.Context, photoUrl string, project
 		&i.ProjectID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DisplayOrder,
 	)
 	return i, err
+}
+
+const setPhotoDisplayOrder = `-- name: SetPhotoDisplayOrder :execrows
+UPDATE photos
+SET display_order = $3,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND project_id = $2
+`
+
+func (q *Queries) SetPhotoDisplayOrder(ctx context.Context, iD int64, projectID sql.NullInt64, displayOrder int32) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPhotoDisplayOrder, iD, projectID, displayOrder)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"reflect"
 	"slices"
@@ -26,11 +27,13 @@ type memoryState struct {
 	tokens       map[string]int64
 	comments     map[int64]int64
 	ratings      map[int64]int64
+	photos       map[int64]domain.Photo
 	profilePhoto string
 }
 
 func (s memoryState) clone() memoryState {
 	s.projects = maps.Clone(s.projects)
+	s.photos = maps.Clone(s.photos)
 	s.technologies = maps.Clone(s.technologies)
 	for id, values := range s.technologies {
 		s.technologies[id] = slices.Clone(values)
@@ -54,6 +57,7 @@ func newStore() *memoryStore {
 		projects:     map[int64]domain.Project{1: {ID: 1, Name: "original"}},
 		technologies: map[int64][]string{1: {"Go"}},
 		users:        map[int64]domain.User{7: {ID: 7, Provider: "ANON"}, 8: {ID: 8, Provider: "LOCAL"}},
+		photos:       map[int64]domain.Photo{},
 		tokens:       map[string]int64{"old-token": 7}, comments: map[int64]int64{1: 7}, ratings: map[int64]int64{1: 7}, profilePhoto: "old-photo",
 	}}
 }
@@ -171,11 +175,64 @@ func (r *memoryRepos) SetProjectDisplayOrder(_ context.Context, id int64, order 
 func (r *memoryRepos) ListTechnologiesByProjectID(_ context.Context, id int64) ([]string, error) {
 	return r.state.technologies[id], nil
 }
-func (r *memoryRepos) ListPhotosByProjectID(context.Context, *int64) ([]domain.Photo, error) {
+
+// ListPhotosByProjectID returns the project's photos by display order, then id,
+// as the SQL query does.
+func (r *memoryRepos) ListPhotosByProjectID(_ context.Context, projectID *int64) ([]domain.Photo, error) {
 	if r.fail == "load-photos" {
 		return nil, injectedFailure
 	}
-	return nil, nil
+	var photos []domain.Photo
+	for _, photo := range r.state.photos {
+		if projectID != nil && photo.ProjectID != nil && *photo.ProjectID == *projectID {
+			photos = append(photos, photo)
+		}
+	}
+	slices.SortFunc(photos, func(a, b domain.Photo) int {
+		if a.DisplayOrder != b.DisplayOrder {
+			return int(a.DisplayOrder - b.DisplayOrder)
+		}
+		return int(a.ID - b.ID)
+	})
+	return photos, nil
+}
+
+// SaveProjectPhoto appends after the project's last photo, as the SQL query
+// does. The use case runs it as a single statement outside a transaction, so
+// it does not go through write.
+func (r *memoryRepos) SaveProjectPhoto(_ context.Context, url string, projectID *int64) (domain.Photo, error) {
+	if r.fail == "save-project-photo" {
+		return domain.Photo{}, injectedFailure
+	}
+	next := int32(0)
+	var maxID int64
+	for id, photo := range r.state.photos {
+		maxID = max(maxID, id)
+		if photo.ProjectID != nil && *photo.ProjectID == *projectID {
+			next = max(next, photo.DisplayOrder+1)
+		}
+	}
+	photo := domain.Photo{ID: maxID + 1, PhotoURL: url, ProjectID: projectID, DisplayOrder: next}
+	r.state.photos[photo.ID] = photo
+	return photo, nil
+}
+
+// SetPhotoDisplayOrder fails on "set-photo-order", or on
+// "set-photo-order-<id>" for one photo so a reorder can fail part way.
+func (r *memoryRepos) SetPhotoDisplayOrder(_ context.Context, projectID, photoID int64, position int32) (int64, error) {
+	if err := r.write("set-photo-order"); err != nil {
+		return 0, err
+	}
+	if r.fail == fmt.Sprintf("set-photo-order-%d", photoID) {
+		return 0, injectedFailure
+	}
+	photo, ok := r.state.photos[photoID]
+	if !ok || photo.ProjectID == nil || *photo.ProjectID != projectID {
+		return 0, nil
+	}
+	photo.DisplayOrder = position
+	r.state.photos[photoID] = photo
+	return 1, nil
 }
 func (r *memoryRepos) RatingCountByProjectID(context.Context, int64) (int32, error) { return 0, nil }
 func (r *memoryRepos) RatingAverageByProjectID(context.Context, int64) (float64, error) {

@@ -86,11 +86,12 @@ func fromContactMessage(row db.ContactMessage) domain.ContactMessage {
 
 func fromPhoto(row db.Photo) domain.Photo {
 	return domain.Photo{
-		ID:        row.ID,
-		PhotoURL:  row.PhotoUrl,
-		ProjectID: int64Ptr(row.ProjectID),
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:           row.ID,
+		PhotoURL:     row.PhotoUrl,
+		ProjectID:    int64Ptr(row.ProjectID),
+		DisplayOrder: row.DisplayOrder,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
 	}
 }
 

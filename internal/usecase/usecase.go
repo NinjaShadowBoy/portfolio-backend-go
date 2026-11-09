@@ -58,6 +58,7 @@ type Service interface {
 	SaveProjectPhoto(ctx context.Context, photoURL string, projectID int64) (dto.Photo, error)
 	SaveProfilePhoto(ctx context.Context, photoURL string) (dto.Photo, error)
 	DeletePhoto(ctx context.Context, id int64) error
+	ReorderProjectPhotos(ctx context.Context, projectID int64, ids []int64) error
 	SubmitContact(ctx context.Context, req dto.Contact) (dto.ContactMessage, error)
 	ListContactMessages(ctx context.Context) ([]dto.ContactMessage, error)
 	ListUnreadContactMessages(ctx context.Context) ([]dto.ContactMessage, error)
@@ -83,6 +84,23 @@ type Service interface {
 	DeleteUserAsAdmin(ctx context.Context, actorID, userID int64) error
 	ListCommentsForAdmin(ctx context.Context, query dto.AdminCommentQuery) (dto.Page[dto.AdminComment], error)
 	DeleteCommentAsAdmin(ctx context.Context, id int64) error
+	// Knowledge index (see knowledge.go). Every method except
+	// KnowledgeEnabled returns domain.ErrKnowledgeDisabled without an embedder.
+	KnowledgeEnabled() bool
+	SyncKnowledge(ctx context.Context, files []domain.KnowledgeSource) (domain.KnowledgeSyncReport, error)
+	SyncKnowledgeNow(ctx context.Context) (domain.KnowledgeSyncReport, error)
+	SearchKnowledge(ctx context.Context, query, lang string, kinds []domain.SourceKind, k int) ([]domain.SearchHit, error)
+	// Admin panel (see knowledge.go and chat.go). ReindexKnowledgeNow
+	// returns domain.ErrKnowledgeSyncRunning when another sync is running,
+	// and the knowledge methods ErrKnowledgeDisabled without an embedder.
+	KnowledgeStatus(ctx context.Context) (dto.KnowledgeStatus, error)
+	ReindexKnowledgeNow(ctx context.Context) (dto.KnowledgeSyncStatus, error)
+	ChatUsageReport(ctx context.Context, days int) (dto.ChatUsageReport, error)
+	// Site assistant (see chat.go). Chat and ChatQuota return
+	// ErrChatDisabled without a chat model.
+	ChatEnabled() bool
+	Chat(ctx context.Context, in domain.ChatInput, emit func(domain.ChatEvent) error) error
+	ChatQuota(ctx context.Context, subject domain.ChatSubject) (domain.ChatQuota, error)
 }
 
 // Dependencies are supplied by the composition root. Use cases never construct adapters.
@@ -93,6 +111,16 @@ type Dependencies struct {
 	Passwords    ports.PasswordHasher
 	OAuth        ports.OAuthGateway
 	Emails       ports.EmailSender
+	// Embedder enables the knowledge index; nil leaves it disabled.
+	Embedder ports.Embedder
+	// KnowledgeCorpus supplies the corpus files for SyncKnowledgeNow and the
+	// chat's publication and contact tools (which work without an embedder).
+	KnowledgeCorpus ports.KnowledgeCorpus
+	// EmbeddingDocModel is part of every source hash, so a model change
+	// re-embeds the whole index.
+	EmbeddingDocModel string
+	// Chat configures the site assistant; a nil Chat.Model disables it.
+	Chat ChatSettings
 }
 
 type UseCases struct {
@@ -102,10 +130,17 @@ type UseCases struct {
 	passwords ports.PasswordHasher
 	oauth     ports.OAuthGateway
 	emails    ports.EmailSender
+	knowledge *knowledgeIndex
+	corpus    ports.KnowledgeCorpus
+	chat      *chatService
+	// syncs is shared by the background loop and the admin reindex, even
+	// across inTransaction copies: the pointer survives the struct copy.
+	syncs *knowledgeSyncState
 }
 
 func New(deps Dependencies) Service {
-	return &UseCases{repos: deps.Repositories, uow: deps.UnitOfWork, tokens: deps.Tokens, passwords: deps.Passwords, oauth: deps.OAuth, emails: deps.Emails}
+	return &UseCases{repos: deps.Repositories, uow: deps.UnitOfWork, tokens: deps.Tokens, passwords: deps.Passwords, oauth: deps.OAuth, emails: deps.Emails,
+		knowledge: newKnowledgeIndex(deps), corpus: deps.KnowledgeCorpus, chat: newChatService(deps.Chat), syncs: newKnowledgeSyncState()}
 }
 
 // inTransaction gives an operation a private copy with transaction-scoped repositories.

@@ -1,6 +1,8 @@
 -- name: SaveProjectPhoto :one
-INSERT INTO photos (photo_url, project_id)
-VALUES ($1, $2)
+-- A new photo goes after the project's existing photos.
+INSERT INTO photos (photo_url, project_id, display_order)
+VALUES ($1, $2,
+        (SELECT COALESCE(MAX(display_order), -1) + 1 FROM photos WHERE project_id = $2))
 RETURNING *;
 
 -- name: SaveProfilePhoto :one
@@ -20,10 +22,17 @@ WHERE id = $1;
 SELECT *
 FROM photos
 WHERE project_id = $1
-ORDER BY created_at DESC, id DESC;
+ORDER BY display_order, id;
 
 -- name: ListPhotosByProjectIDs :many
 SELECT *
 FROM photos
 WHERE project_id = ANY($1::bigint[])
-ORDER BY project_id, created_at DESC, id DESC;
+ORDER BY project_id, display_order, id;
+
+-- name: SetPhotoDisplayOrder :execrows
+UPDATE photos
+SET display_order = $3,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND project_id = $2;

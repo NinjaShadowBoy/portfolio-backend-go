@@ -43,8 +43,9 @@ services:
       args:
         VERSION: dev
     restart: unless-stopped
-    # .env supplies OAuth, SMTP and any personal overrides; the values below
-    # win over it because they must match the other containers.
+    # .env supplies OAuth, SMTP, OPENROUTER_API_KEY and any personal overrides;
+    # the values below win over it because they must match the other
+    # containers.
     env_file:
       - path: .env
         required: false

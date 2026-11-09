@@ -185,7 +185,7 @@ func assembleProjectDTO(project domain.Project, technologies []string, photos []
 	photoDTOs := make([]dto.Photo, 0, len(photos))
 	for _, photo := range photos {
 		photoURLs = append(photoURLs, photo.PhotoURL)
-		photoDTOs = append(photoDTOs, dto.Photo{ID: photo.ID, PhotoURL: photo.PhotoURL, ProjectID: project.ID})
+		photoDTOs = append(photoDTOs, dto.Photo{ID: photo.ID, PhotoURL: photo.PhotoURL, ProjectID: project.ID, DisplayOrder: int(photo.DisplayOrder)})
 	}
 
 	return dto.Project{

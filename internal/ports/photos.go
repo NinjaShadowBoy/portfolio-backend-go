@@ -13,4 +13,7 @@ type PhotosRepository interface {
 	ListPhotosByProjectIDs(ctx context.Context, ids []int64) ([]domain.Photo, error)
 	SaveProfilePhoto(ctx context.Context, photoURL string) (domain.Photo, error)
 	SaveProjectPhoto(ctx context.Context, photoURL string, projectID *int64) (domain.Photo, error)
+	// SetPhotoDisplayOrder moves one of the project's photos to position and
+	// returns the rows changed: 0 when the photo is not in that project.
+	SetPhotoDisplayOrder(ctx context.Context, projectID, photoID int64, position int32) (int64, error)
 }

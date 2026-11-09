@@ -24,7 +24,7 @@ func newTestRouter(t *testing.T, svc usecase.Service) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
 	r := gin.New()
-	New(svc, jwt, "http://localhost/redirect", "/portfolio/v1", false).Routes(r.Group("/portfolio/v1"))
+	New(svc, jwt, "http://localhost/redirect", "/portfolio/v1", false, ChatOptions{}).Routes(r.Group("/portfolio/v1"))
 	return r
 }
 
@@ -146,7 +146,7 @@ func TestArticleCommentRouteResolves(t *testing.T) {
 func TestCreateCommentUnauthorizedWithoutIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	jwt := auth.NewJWT("test-secret", time.Hour, "test-issuer")
-	h := New(&fakeService{}, jwt, "http://localhost/redirect", "/portfolio/v1", false).(*api)
+	h := New(&fakeService{}, jwt, "http://localhost/redirect", "/portfolio/v1", false, ChatOptions{}).(*api)
 
 	r := gin.New()
 	// Registered WITHOUT EnsureIdentity, so IdentityFromContext returns !ok.

@@ -7,6 +7,7 @@ import (
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/auth"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/middleware"
 	"github.com/ninjashadowboy/portfolio-backend-go/internal/usecase"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type API interface {
@@ -19,6 +20,8 @@ type api struct {
 	oauthRedirectURI string
 	basePath         string
 	anonCookie       middleware.AnonCookieConfig
+	chat             ChatOptions
+	chatRequests     metric.Int64Counter
 }
 
 type oauthCookieConfig struct {
@@ -40,13 +43,15 @@ var oauthCookieNames = map[usecase.OAuthProvider]struct {
 
 const oauthCookieMaxAge = 10 * 60
 
-func New(svc usecase.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, cookieSecure bool) API {
+func New(svc usecase.Service, jwt *auth.JWT, oauthRedirectURI, basePath string, cookieSecure bool, chat ChatOptions) API {
 	return &api{
 		svc:              svc,
 		jwt:              jwt,
 		oauthRedirectURI: oauthRedirectURI,
 		basePath:         basePath,
 		anonCookie:       middleware.AnonCookieConfig{Path: basePath, Secure: cookieSecure},
+		chat:             chat,
+		chatRequests:     chatRequestCounter(),
 	}
 }
 
@@ -120,9 +125,13 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	admin.PUT("/projects/:id", h.UpdateProject)
 	admin.DELETE("/projects/:id", h.DeleteProject)
 	admin.DELETE("/projects/:id/ratings", h.DeleteProjectRatings)
+	admin.PUT("/projects/:id/photos/order", h.ReorderProjectPhotos)
 	admin.DELETE("/ratings/project/:projectId", h.DeleteProjectRatings)
 
 	admin.GET("/admin/stats", h.GetAdminStats)
+	admin.GET("/admin/chat/usage", h.AdminChatUsage)
+	admin.GET("/admin/knowledge", h.AdminKnowledge)
+	admin.POST("/admin/knowledge/reindex", h.ReindexKnowledge)
 	admin.GET("/admin/users", h.ListUsersForAdmin)
 	admin.PATCH("/admin/users/:id/role", h.UpdateUserRole)
 	admin.DELETE("/admin/users/:id", h.DeleteUserAsAdmin)
@@ -135,6 +144,20 @@ func (h *api) Routes(r *gin.RouterGroup) {
 	admin.PATCH("/contact/:id/read", h.MarkContactRead)
 	admin.PATCH("/contact/:id/replied", h.MarkContactReplied)
 	admin.DELETE("/contact/:id", h.DeleteContactMessage)
+
+	// Site assistant. ResolveIdentity never provisions a user, unlike
+	// EnsureIdentity: anonymous visitors may chat, and minting a row per bot
+	// would not scale.
+	chat := r.Group("/chat")
+	chat.Use(middleware.ResolveIdentity(h.jwt, h.svc, h.chat.IPHashKey))
+	chat.GET("/config", h.ChatConfig)
+	chatPost := chat.Group("")
+	chatPost.Use(
+		middleware.RequireOrigin(h.chat.AllowedOrigins),
+		middleware.RateLimit(middleware.NewRateLimiter(chatRateEvery, chatRateBurst, nil), chatSubjectKey),
+		middleware.Concurrency(h.chat.MaxConcurrent),
+	)
+	chatPost.POST("", h.Chat)
 
 	r.GET("/cron", h.Cron)
 }

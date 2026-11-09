@@ -37,6 +37,24 @@ func (h *api) SaveProfilePhoto(c *gin.Context) {
 	c.JSON(http.StatusCreated, photo)
 }
 
+// ReorderProjectPhotos handles PUT /projects/:id/photos/order. The route
+// param is named id because gin requires every /projects/:x route to share it.
+func (h *api) ReorderProjectPhotos(c *gin.Context) {
+	projectID, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var req dto.PhotoOrder
+	if !bindJSON(c, &req) {
+		return
+	}
+	if err := h.svc.ReorderProjectPhotos(c.Request.Context(), projectID, req.IDs); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *api) DeletePhoto(c *gin.Context) {
 	id, ok := parseID(c, "photoId")
 	if !ok {

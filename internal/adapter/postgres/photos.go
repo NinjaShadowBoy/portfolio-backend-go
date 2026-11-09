@@ -34,3 +34,8 @@ func (r *repositories) SaveProjectPhoto(ctx context.Context, photoURL string, pr
 	row, err := r.q.SaveProjectPhoto(ctx, photoURL, nullInt64(projectID))
 	return fromPhoto(row), repositoryError(err)
 }
+
+func (r *repositories) SetPhotoDisplayOrder(ctx context.Context, projectID, photoID int64, position int32) (int64, error) {
+	rows, err := r.q.SetPhotoDisplayOrder(ctx, photoID, nullInt64(&projectID), position)
+	return rows, repositoryError(err)
+}

@@ -46,8 +46,11 @@ type Photo struct {
 	ID        int64
 	PhotoURL  string
 	ProjectID *int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// DisplayOrder is the admin-chosen position within the project. Lower
+	// comes first; the first photo is the project's cover.
+	DisplayOrder int32
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type Project struct {

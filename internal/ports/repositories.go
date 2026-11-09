@@ -10,4 +10,6 @@ type Repositories interface {
 	Contacts() ContactsRepository
 	AnonymousTokens() AnonymousTokensRepository
 	Stats() StatsRepository
+	Knowledge() KnowledgeRepository
+	ChatUsage() ChatUsageRepository
 }

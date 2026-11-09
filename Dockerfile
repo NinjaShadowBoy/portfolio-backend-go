@@ -30,13 +30,17 @@ COPY --from=build /out/portfolio-backend /app/portfolio-backend
 # Migrations and seeds ship with the binary they were built against, so a
 # rollback to an older tag can never pair code with the wrong schema.
 COPY --chown=app:app db /app/db
+# The assistant's knowledge corpus ships the same way, next to the
+# migrations, so an image always indexes the text it was built with.
+COPY --chown=app:app knowledge /app/knowledge
 
 USER app
 ENV BIND_ADDR=0.0.0.0 \
     PORT=8081 \
     GIN_MODE=release \
     MIGRATIONS_PATH=db/migrations \
-    SEEDS_PATH=db/seeds
+    SEEDS_PATH=db/seeds \
+    KNOWLEDGE_DIR=knowledge
 EXPOSE 8081
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \

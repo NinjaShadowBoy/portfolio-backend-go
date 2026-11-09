@@ -28,7 +28,7 @@ The frontend that consumes it is
 
 ## Stack
 
-- Go 1.26
+- Go 1.27
 - `github.com/gin-gonic/gin`
 - `sqlc`
 - PostgreSQL
@@ -39,7 +39,7 @@ The frontend that consumes it is
 
 ## Quick start
 
-You need Go 1.26 and either Docker or a local PostgreSQL.
+You need Go 1.27 and either Docker or a local PostgreSQL.
 
 ```bash
 git clone https://github.com/NinjaShadowBoy/portfolio-backend-go.git
@@ -70,6 +70,8 @@ JWT_SECRET=$(openssl rand -hex 32)      # at least 32 characters
 SMTP_USERNAME=your-smtp-username
 SMTP_PASSWORD=your-smtp-password
 EMAIL_RECIPIENT=your-recipient@example.com
+# and, only when CHAT_ENABLED=true:
+OPENROUTER_API_KEY=your-openrouter-api-key
 ```
 
 The quickest local setup is the compose stack, which brings up Postgres with
@@ -126,6 +128,13 @@ Health endpoint:
 
 ```text
 GET /portfolio/v1/cron
+```
+
+Site assistant (SSE, disabled with `CHAT_ENABLED=false`; calls OpenRouter, model `CHAT_MODEL`, `openrouter/free` by default):
+
+```text
+POST /portfolio/v1/chat
+GET  /portfolio/v1/chat/config
 ```
 
 OAuth2 flows:

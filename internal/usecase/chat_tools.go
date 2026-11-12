@@ -34,7 +34,7 @@ const (
 // Public contact details the assistant may give. They match what the site
 // already publishes (portfolio-app core/constants/contact.ts and
 // social-links.service.ts); the phone number is left out on purpose.
-const contactEmail = "alex.nelson.bryan@gmail.com"
+const contactEmail = "alex@alexabena.me"
 
 type chatProfile struct {
 	Name string `json:"name"`

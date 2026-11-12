@@ -11,7 +11,7 @@ reviewed: false
 
 À la recherche d'un stage PFE en développement full-stack et IA agentique (6 mois, à partir de janvier 2027).
 
-Basé à Grenoble, France, et mobile dans toute la France. E-mail : alex.nelson.bryan@gmail.com. La page contact de ce site est le meilleur moyen de le joindre.
+Basé à Grenoble, France, et mobile dans toute la France. E-mail : alex@alexabena.me. La page contact de ce site est le meilleur moyen de le joindre.
 
 ## Profil
 

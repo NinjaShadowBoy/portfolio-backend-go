@@ -11,7 +11,7 @@ reviewed: false
 
 Looking for a 6-month end-of-studies internship in full-stack development and agentic AI, starting January 2027.
 
-Based in Grenoble, France, and open to relocation across France. Email: alex.nelson.bryan@gmail.com. The contact page of this site is the best way to get in touch.
+Based in Grenoble, France, and open to relocation across France. Email: alex@alexabena.me. The contact page of this site is the best way to get in touch.
 
 ## Profile
 
